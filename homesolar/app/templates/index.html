@@ -1051,6 +1051,12 @@
             `;
             
             document.getElementById('current-date').textContent = data.date;
+            
+            // Store current solar data for real-time progress calculation
+            currentSolarData = {
+                sunrise_time: new Date(data.sunrise_datetime),
+                sunset_time: new Date(data.sunset_datetime)
+            };
         }
         
         let durationChart = null;
@@ -1264,6 +1270,75 @@
             }
         }
         
+        // Store current solar data for progress calculation
+        let currentSolarData = null;
+        
+        function formatDuration(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+        
+        function updateProgressBar() {
+            if (!currentSolarData) return;
+            
+            const now = new Date();
+            const sunrise = new Date(currentSolarData.sunrise_time);
+            const sunset = new Date(currentSolarData.sunset_time);
+            
+            // Check if we can calculate progress
+            if (!sunrise || !sunset || isNaN(sunrise) || isNaN(sunset)) return;
+            
+            let isDay = now >= sunrise && now <= sunset;
+            let progress = 0, elapsedSeconds = 0, remainingSeconds = 0;
+            
+            if (isDay) {
+                const totalSeconds = (sunset - sunrise) / 1000;
+                elapsedSeconds = (now - sunrise) / 1000;
+                progress = (elapsedSeconds / totalSeconds) * 100;
+                remainingSeconds = (sunset - now) / 1000;
+            } else {
+                let startTime, endTime;
+                if (now > sunset) {
+                    // After sunset
+                    startTime = sunset;
+                    endTime = new Date(sunrise);
+                    endTime.setDate(endTime.getDate() + 1);
+                } else {
+                    // Before sunrise
+                    startTime = new Date(sunset);
+                    startTime.setDate(startTime.getDate() - 1);
+                    endTime = sunrise;
+                }
+                
+                const totalSeconds = (endTime - startTime) / 1000;
+                elapsedSeconds = (now - startTime) / 1000;
+                progress = (elapsedSeconds / totalSeconds) * 100;
+                remainingSeconds = (endTime - now) / 1000;
+            }
+            
+            // Clamp progress between 0 and 100
+            progress = Math.min(100, Math.max(0, progress));
+            
+            // Update progress indicator
+            const progressIndicator = document.querySelector('.progress-indicator');
+            if (progressIndicator) {
+                progressIndicator.style.left = progress + '%';
+            }
+            
+            // Update progress stats
+            const statItems = document.querySelectorAll('.stat-item');
+            if (statItems.length >= 3) {
+                // Elapsed
+                statItems[0].querySelector('.stat-value').textContent = formatDuration(elapsedSeconds);
+                // Remaining
+                statItems[1].querySelector('.stat-value').textContent = formatDuration(remainingSeconds);
+                // Progression percentage
+                statItems[2].querySelector('.stat-value').textContent = Math.round(progress) + '%';
+            }
+        }
+        
         // ==========================================
         // Events Functions
         // ==========================================
@@ -1354,8 +1429,11 @@
                 // Load and render events
                 await renderEvents();
                 
-                // Update time every second
-                setInterval(updateTime, 1000);
+                // Update time and progress bar every second
+                setInterval(() => {
+                    updateTime();
+                    updateProgressBar();
+                }, 1000);
                 
                 // Refresh events every 30 seconds
                 setInterval(renderEvents, 30 * 1000);

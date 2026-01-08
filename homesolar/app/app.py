@@ -97,11 +97,12 @@ def get_timezone_offset(timezone_str: str) -> int:
 
 
 def format_duration(duration: timedelta) -> str:
-    """Format duration in readable format"""
-    total_seconds = abs(duration.total_seconds())
-    minutes = int(total_seconds // 60)
-    seconds = int(total_seconds % 60)
-    return f"{minutes}m {seconds}s"
+    """Format duration in HH:MM:SS format"""
+    total_seconds = int(abs(duration.total_seconds()))
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
 def get_current_phase(info: CompleteSolarInfo) -> dict:
@@ -238,6 +239,8 @@ def get_solar_data():
         "timezone": TIMEZONE,
         "sunrise": info.sunrise.strftime("%H:%M") if info.sunrise else None,
         "sunset": info.sunset.strftime("%H:%M") if info.sunset else None,
+        "sunrise_datetime": info.sunrise.isoformat() if info.sunrise else None,
+        "sunset_datetime": info.sunset.isoformat() if info.sunset else None,
         "solar_noon": info.solar_noon.strftime("%H:%M") if info.solar_noon else None,
         "civil_dawn": info.civil_dawn.strftime("%H:%M") if info.civil_dawn else None,
         "civil_dusk": info.civil_dusk.strftime("%H:%M") if info.civil_dusk else None,
