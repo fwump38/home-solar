@@ -352,18 +352,57 @@ class CompleteSolarModel:
         return next_date - self.current_solar_info.date
     
     def get_chart_data(self) -> list:
-        """Génère les données pour le graphique annuel"""
+        """Génère les données pour les graphiques annuels"""
         chart_data = []
+        previous_duration = None
         
         for date, info in sorted(self.relative_map.items()):
             duration = info.day_length
             if duration:
+                duration_seconds = int(duration.total_seconds())
+                
+                # Calculate diff from previous day
+                diff_seconds = 0
+                if previous_duration:
+                    diff_seconds = duration_seconds - int(previous_duration.total_seconds())
+                
+                # Calculate color based on day length (green = longer, red = shorter)
+                # Summer ~16h (57600s), Winter ~8h (28800s), Average ~12h (43200s)
+                ratio = (duration_seconds - 28800) / (57600 - 28800)  # 0-1 scale
+                ratio = max(0, min(1, ratio))
+                
+                # Color from red (winter) to yellow to green (summer)
+                if ratio < 0.5:
+                    r = 255
+                    g = int(255 * (ratio * 2))
+                    b = 100
+                else:
+                    r = int(255 * (1 - (ratio - 0.5) * 2))
+                    g = 255
+                    b = 100
+                color = f'rgba({r}, {g}, {b}, 0.8)'
+                
+                # Sunrise/sunset in minutes since midnight for line chart
+                sunrise_minutes = None
+                sunset_minutes = None
+                if info.sunrise:
+                    sunrise_minutes = info.sunrise.hour * 60 + info.sunrise.minute
+                if info.sunset:
+                    sunset_minutes = info.sunset.hour * 60 + info.sunset.minute
+                
                 chart_data.append({
                     'date': date.isoformat(),
+                    'duration_seconds': duration_seconds,
                     'duration_minutes': duration.total_seconds() / 60,
                     'duration_formatted': info.get_human_readable_duration(),
+                    'diff_seconds': diff_seconds,
+                    'color': color,
                     'sunrise': info.sunrise.strftime('%H:%M') if info.sunrise else None,
-                    'sunset': info.sunset.strftime('%H:%M') if info.sunset else None
+                    'sunset': info.sunset.strftime('%H:%M') if info.sunset else None,
+                    'sunrise_minutes': sunrise_minutes,
+                    'sunset_minutes': sunset_minutes
                 })
+                
+                previous_duration = duration
         
         return chart_data

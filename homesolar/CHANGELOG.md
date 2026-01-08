@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.4] - 2026-01-08
+
+### Fixed
+- Minor bug fixes and improvements
+
 ## [1.0.3] - 2026-01-08
 
 ### Added

@@ -305,7 +305,8 @@
             grid-column: 1 / -1;
         }
         
-        #chart-container {
+        #chart-container,
+        #sunrise-chart-container {
             height: 300px;
             margin-top: 16px;
         }
@@ -659,7 +660,8 @@
                 remaining: 'Remaining',
                 progression: 'Progress',
                 position: 'Position',
-                annualChart: 'Annual Day Length',
+                annualChart: 'Day Length Over the Year',
+                sunriseSunsetChart: 'Sunrise & Sunset Times',
                 solarNoon: 'Solar noon',
                 settings: 'Settings',
                 locationSettings: 'Location Settings',
@@ -703,7 +705,8 @@
                 remaining: 'Restant',
                 progression: 'Progression',
                 position: 'Position',
-                annualChart: 'Durée d\'ensoleillement sur l\'année',
+                annualChart: 'Durée du jour sur l\'année',
+                sunriseSunsetChart: 'Heures de lever et coucher',
                 solarNoon: 'Midi solaire',
                 settings: 'Paramètres',
                 locationSettings: 'Configuration de la position',
@@ -883,11 +886,19 @@
                     </div>
                 </div>
                 
-                <!-- Annual Chart -->
+                <!-- Day Length Bar Chart -->
                 <div class="card chart-section">
                     <div class="card-title" style="margin-bottom: 8px;">📊 ${t('annualChart')}</div>
                     <div id="chart-container">
                         <canvas id="duration-chart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Sunrise/Sunset Line Chart -->
+                <div class="card chart-section">
+                    <div class="card-title" style="margin-bottom: 8px;">🌅 ${t('sunriseSunsetChart')}</div>
+                    <div id="sunrise-chart-container">
+                        <canvas id="sunrise-chart"></canvas>
                     </div>
                 </div>
             `;
@@ -895,83 +906,193 @@
             document.getElementById('current-date').textContent = data.date;
         }
         
-        async function renderChart() {
+        let durationChart = null;
+        let sunriseChart = null;
+        
+        async function renderCharts() {
             const chartData = await fetchChartData();
             if (!chartData || chartData.length === 0) return;
             
-            const ctx = document.getElementById('duration-chart');
-            if (!ctx) return;
-            
-            // Filter to show one point per week
+            // Filter to show one point per week for better readability
             const filteredData = chartData.filter((_, i) => i % 7 === 0);
-            
-            if (chart) {
-                chart.destroy();
-            }
-            
             const locale = currentLanguage === 'fr' ? 'fr-FR' : 'en-US';
             
-            chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: filteredData.map(d => {
-                        const date = new Date(d.date);
-                        return date.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
-                    }),
-                    datasets: [{
-                        label: currentLanguage === 'fr' ? 'Durée (heures)' : 'Duration (hours)',
-                        data: filteredData.map(d => d.duration_minutes / 60),
-                        borderColor: '#ffc107',
-                        backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 0,
-                        pointHoverRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const hours = Math.floor(context.raw);
-                                    const minutes = Math.round((context.raw - hours) * 60);
-                                    return `${hours}h ${minutes}min`;
-                                }
-                            }
-                        }
+            const labels = filteredData.map(d => {
+                const date = new Date(d.date);
+                return date.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+            });
+            
+            // =============================================
+            // 1. Duration Bar Chart (like Blazor version)
+            // =============================================
+            const durationCtx = document.getElementById('duration-chart');
+            if (durationCtx) {
+                if (durationChart) {
+                    durationChart.destroy();
+                }
+                
+                durationChart = new Chart(durationCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: currentLanguage === 'fr' ? 'Durée du jour' : 'Day length',
+                            data: filteredData.map(d => d.duration_seconds),
+                            backgroundColor: filteredData.map(d => d.color),
+                            borderWidth: 0,
+                            borderRadius: 2
+                        }]
                     },
-                    scales: {
-                        x: {
-                            grid: {
-                                color: 'rgba(255, 255, 255, 0.05)'
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
                             },
-                            ticks: {
-                                color: 'rgba(255, 255, 255, 0.5)',
-                                maxTicksLimit: 12
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const seconds = context.raw;
+                                        const hours = Math.floor(seconds / 3600);
+                                        const minutes = Math.floor((seconds % 3600) / 60);
+                                        const diff = filteredData[context.dataIndex].diff_seconds;
+                                        const diffMin = Math.floor(Math.abs(diff) / 60);
+                                        const diffSec = Math.abs(diff) % 60;
+                                        const sign = diff >= 0 ? '+' : '-';
+                                        return `${hours}h ${minutes}min (${sign}${diffMin}m${diffSec}s)`;
+                                    }
+                                }
                             }
                         },
-                        y: {
-                            grid: {
-                                color: 'rgba(255, 255, 255, 0.05)'
-                            },
-                            ticks: {
-                                color: 'rgba(255, 255, 255, 0.5)',
-                                callback: function(value) {
-                                    return value + 'h';
+                        scales: {
+                            x: {
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                },
+                                ticks: {
+                                    color: 'rgba(255, 255, 255, 0.5)',
+                                    maxTicksLimit: 12,
+                                    maxRotation: 45
                                 }
                             },
-                            min: 6,
-                            max: 18
+                            y: {
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                },
+                                ticks: {
+                                    color: 'rgba(255, 255, 255, 0.5)',
+                                    callback: function(value) {
+                                        const hours = Math.floor(value / 3600);
+                                        return `${hours}h`;
+                                    }
+                                },
+                                beginAtZero: false
+                            }
                         }
                     }
+                });
+            }
+            
+            // =============================================
+            // 2. Sunrise/Sunset Line Chart (like Blazor version)
+            // =============================================
+            const sunriseCtx = document.getElementById('sunrise-chart');
+            if (sunriseCtx) {
+                if (sunriseChart) {
+                    sunriseChart.destroy();
                 }
-            });
+                
+                sunriseChart = new Chart(sunriseCtx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: currentLanguage === 'fr' ? 'Lever du soleil' : 'Sunrise',
+                                data: filteredData.map(d => d.sunrise_minutes),
+                                borderColor: '#a56890',
+                                backgroundColor: 'rgba(165, 104, 144, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 5,
+                                borderWidth: 2
+                            },
+                            {
+                                label: currentLanguage === 'fr' ? 'Coucher du soleil' : 'Sunset',
+                                data: filteredData.map(d => d.sunset_minutes),
+                                borderColor: '#bb885f',
+                                backgroundColor: 'rgba(187, 136, 95, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 5,
+                                borderWidth: 2
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                labels: {
+                                    color: 'rgba(255, 255, 255, 0.7)',
+                                    usePointStyle: true,
+                                    padding: 20
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const minutes = context.raw;
+                                        const hours = Math.floor(minutes / 60);
+                                        const mins = minutes % 60;
+                                        const timeStr = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+                                        return `${context.dataset.label}: ${timeStr}`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                },
+                                ticks: {
+                                    color: 'rgba(255, 255, 255, 0.5)',
+                                    maxTicksLimit: 12,
+                                    maxRotation: 45
+                                }
+                            },
+                            y: {
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                },
+                                ticks: {
+                                    color: 'rgba(255, 255, 255, 0.5)',
+                                    callback: function(value) {
+                                        const hours = Math.floor(value / 60);
+                                        const mins = value % 60;
+                                        return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        // Alias for backward compatibility
+        async function renderChart() {
+            await renderCharts();
         }
         
         function updateTime() {
