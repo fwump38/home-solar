@@ -15,13 +15,10 @@ COPY requirements.txt /app/
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy application files
-COPY rootfs /
 COPY app /app
 
-# Set permissions
-RUN chmod +x /run.sh
+# Copy rootfs
+COPY rootfs /
 
 # Expose port
 EXPOSE 8099
-
-CMD ["/run.sh"]

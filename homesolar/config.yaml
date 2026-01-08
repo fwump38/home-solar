@@ -18,6 +18,7 @@ ingress_entry: /
 panel_icon: "mdi:weather-sunny"
 panel_title: "HomeSolar"
 homeassistant_api: true
+init: false
 map:
   - type: share
     read_only: false
