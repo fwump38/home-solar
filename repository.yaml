@@ -1,24 +1,3 @@
-# HomeSolar Add-on Repository
-
-Home Assistant add-on repository for HomeSolar - Complete Solar Ephemeris.
-
-## Add-ons
-
-### [HomeSolar - Solar Ephemeris](./home-solar)
-
-Complete solar ephemeris based on NOAA algorithm. Shows sunrise/sunset, civil/nautical/astronomical twilights, day duration and annual charts.
-
-**Features:**
-- Precise sunrise/sunset calculation
-- Civil, nautical & astronomical twilights
-- Day length tracking
-- Annual visualization
-- Multi-language support (auto-detects from HA)
-
-## Installation
-
-1. Open Home Assistant
-2. Go to **Settings** → **Add-ons** → **Add-on Store**
-3. Click the three dots menu → **Repositories**
-4. Add this repository URL
-5. Find "HomeSolar" and install
+name: "HomeSolar Repository"
+url: "https://github.com/pehadavid/home-solar"
+maintainer: "pehadavid"

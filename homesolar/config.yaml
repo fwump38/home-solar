@@ -19,7 +19,8 @@ panel_icon: "mdi:weather-sunny"
 panel_title: "HomeSolar"
 homeassistant_api: true
 map:
-  - share:rw
+  - type: share
+    read_only: false
 options:
   latitude: 48.8566
   longitude: 2.3522
