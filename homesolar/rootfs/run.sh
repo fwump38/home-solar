@@ -20,8 +20,16 @@ auto_detect_language=$(bashio::config 'auto_detect_language')
 # Get ingress settings
 export INGRESS_ENTRY=$(bashio::addon.ingress_entry)
 
-# Get Home Assistant language
-ha_language=$(bashio::info.language)
+# Get Home Assistant language (with fallback to 'en')
+ha_language="en"
+if bashio::fs.file_exists '/data/options.json'; then
+    ha_language=$(bashio::jq "/data/options.json" '.language // "en"' 2>/dev/null || echo "en")
+fi
+
+# Try to get language from Home Assistant API
+if bashio::var.has_value "$(bashio::api.supervisor GET /core/info false .language 2>/dev/null)"; then
+    ha_language=$(bashio::api.supervisor GET /core/info false .language)
+fi
 
 # Export variables for the app
 export LATITUDE="${latitude}"
