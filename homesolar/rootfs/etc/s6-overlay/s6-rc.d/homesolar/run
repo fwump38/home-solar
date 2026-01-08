@@ -8,14 +8,14 @@
 declare latitude
 declare longitude
 declare timezone
-declare auto_detect_language
+declare language
 declare ha_language
 
 # Read configuration
 latitude=$(bashio::config 'latitude')
 longitude=$(bashio::config 'longitude')
 timezone=$(bashio::config 'timezone')
-auto_detect_language=$(bashio::config 'auto_detect_language')
+language=$(bashio::config 'language')
 
 # Get ingress settings
 export INGRESS_ENTRY=$(bashio::addon.ingress_entry)
@@ -35,13 +35,14 @@ fi
 export LATITUDE="${latitude}"
 export LONGITUDE="${longitude}"
 export TIMEZONE="${timezone}"
-export AUTO_DETECT_LANGUAGE="${auto_detect_language}"
+export LANGUAGE="${language}"
 export HA_LANGUAGE="${ha_language}"
 
 bashio::log.info "Starting HomeSolar - Solar Ephemeris..."
 bashio::log.info "Position: ${latitude}, ${longitude}"
 bashio::log.info "Timezone: ${timezone}"
-bashio::log.info "Language: ${ha_language}"
+bashio::log.info "Language setting: ${language}"
+bashio::log.info "HA Language: ${ha_language}"
 
 cd /app || bashio::exit.nok "Cannot change to /app directory"
 exec gunicorn --bind 0.0.0.0:8099 --workers 1 --threads 2 app:app

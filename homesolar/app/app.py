@@ -29,7 +29,7 @@ DEFAULT_LATITUDE = float(os.environ.get('LATITUDE', 48.8566))
 DEFAULT_LONGITUDE = float(os.environ.get('LONGITUDE', 2.3522))
 TIMEZONE = os.environ.get('TIMEZONE', 'Europe/Paris')
 HA_LANGUAGE = os.environ.get('HA_LANGUAGE', 'en')
-AUTO_DETECT_LANGUAGE = os.environ.get('AUTO_DETECT_LANGUAGE', 'true').lower() == 'true'
+CONFIG_LANGUAGE = os.environ.get('LANGUAGE', 'auto')
 INGRESS_ENTRY = os.environ.get('INGRESS_ENTRY', '')
 
 
@@ -71,9 +71,15 @@ LATITUDE, LONGITUDE = get_location()
 SUPPORTED_LANGUAGES = ['en', 'fr']
 
 def get_language():
-    """Get the current language (from HA or default to English)"""
-    if AUTO_DETECT_LANGUAGE and HA_LANGUAGE in SUPPORTED_LANGUAGES:
+    """Get the current language (from config or auto-detect from HA)"""
+    # If language is explicitly set (not auto), use it
+    if CONFIG_LANGUAGE != 'auto':
+        return CONFIG_LANGUAGE if CONFIG_LANGUAGE in SUPPORTED_LANGUAGES else 'en'
+    
+    # Auto-detect from Home Assistant
+    if HA_LANGUAGE in SUPPORTED_LANGUAGES:
         return HA_LANGUAGE
+    
     # Default to English
     return 'en'
 

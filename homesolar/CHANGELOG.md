@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.3] - 2026-01-08
+
+### Added
+- Language selection in add-on configuration (auto, en, fr)
+- Translation files for configuration options
+- Manual language override option in settings
+
+### Changed
+- Replaced auto_detect_language boolean with language dropdown
+- Improved language detection logic with manual override support
+
+### Fixed
+- Fixed bashio::info.language command not found error
+- Improved s6-overlay v3 compatibility
+
 ## [1.0.0] - 2026-01-08
 
 ### Added

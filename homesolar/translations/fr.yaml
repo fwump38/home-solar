@@ -1,0 +1,13 @@
+configuration:
+  latitude:
+    name: Latitude
+    description: Latitude de votre emplacement
+  longitude:
+    name: Longitude
+    description: Longitude de votre emplacement
+  timezone:
+    name: Fuseau horaire
+    description: Votre fuseau horaire (ex. Europe/Paris)
+  language:
+    name: Langue
+    description: Langue de l'interface (auto = détection depuis Home Assistant)

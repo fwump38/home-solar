@@ -1,0 +1,13 @@
+configuration:
+  latitude:
+    name: Latitude
+    description: Latitude of your location
+  longitude:
+    name: Longitude
+    description: Longitude of your location
+  timezone:
+    name: Timezone
+    description: Your timezone (e.g., Europe/Paris)
+  language:
+    name: Language
+    description: Interface language (auto = detect from Home Assistant)

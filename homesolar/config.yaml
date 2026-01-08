@@ -1,6 +1,6 @@
 # Home Assistant Add-on: HomeSolar - Solar Ephemeris
 name: "HomeSolar - Solar Ephemeris"
-version: "1.0.2"
+version: "1.0.3"
 slug: "homesolar"
 description: "Complete solar ephemeris based on NOAA algorithm. Shows sunrise/sunset, civil/nautical/astronomical twilights, day length and progression."
 url: "https://github.com/pehadavid/home-solar"
@@ -26,9 +26,9 @@ options:
   latitude: 48.8566
   longitude: 2.3522
   timezone: "Europe/Paris"
-  auto_detect_language: true
+  language: "auto"
 schema:
   latitude: float
   longitude: float
   timezone: str
-  auto_detect_language: bool
+  language: "list(auto|en|fr)"
