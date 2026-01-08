@@ -300,6 +300,103 @@
             font-weight: 500;
         }
         
+        /* Events section */
+        .events-section {
+            grid-column: 1 / -1;
+        }
+        
+        .events-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 8px;
+            margin-top: 16px;
+        }
+        
+        .event-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 12px 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            border-left: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .event-item.past {
+            opacity: 0.5;
+            border-left-color: #4caf50;
+        }
+        
+        .event-item.next {
+            border-left-color: var(--ha-primary-color);
+            background: rgba(3, 169, 244, 0.1);
+        }
+        
+        .event-item.upcoming {
+            border-left-color: var(--ha-warning-color);
+        }
+        
+        .event-icon {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+        
+        .event-name {
+            font-size: 11px;
+            color: var(--ha-text-secondary);
+            text-align: center;
+            margin-bottom: 4px;
+        }
+        
+        .event-time {
+            font-size: 16px;
+            font-weight: 500;
+        }
+        
+        .event-status {
+            font-size: 10px;
+            margin-top: 4px;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        
+        .event-status.fired {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+        
+        .event-status.pending {
+            background: rgba(3, 169, 244, 0.2);
+            color: #03a9f4;
+        }
+        
+        .ha-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+        }
+        
+        .ha-status-badge.enabled {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+        
+        .ha-status-badge.disabled {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+        
+        .event-loading {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 20px;
+            color: var(--ha-text-secondary);
+        }
+        
         /* Chart section */
         .chart-section {
             grid-column: 1 / -1;
@@ -684,6 +781,24 @@
                     civil_dawn: 'Civil Dawn',
                     nautical_dawn: 'Nautical Dawn',
                     astronomical_dawn: 'Astronomical Dawn'
+                },
+                events: {
+                    title: 'Events Schedule',
+                    haIntegration: 'Home Assistant Integration',
+                    nextEvent: 'Next Event',
+                    scheduled: 'Scheduled',
+                    fired: 'Fired',
+                    haEnabled: 'Events active',
+                    haDisabled: 'Events disabled (not running in HA)',
+                    astronomical_dawn: 'Astronomical Dawn',
+                    nautical_dawn: 'Nautical Dawn',
+                    civil_dawn: 'Civil Dawn',
+                    sunrise: 'Sunrise',
+                    solar_noon: 'Solar Noon',
+                    sunset: 'Sunset',
+                    civil_dusk: 'Civil Dusk',
+                    nautical_dusk: 'Nautical Dusk',
+                    astronomical_dusk: 'Astronomical Dusk'
                 }
             },
             fr: {
@@ -729,6 +844,24 @@
                     civil_dawn: 'Aube civile',
                     nautical_dawn: 'Aube nautique',
                     astronomical_dawn: 'Aube astronomique'
+                },
+                events: {
+                    title: 'Événements planifiés',
+                    haIntegration: 'Intégration Home Assistant',
+                    nextEvent: 'Prochain événement',
+                    scheduled: 'Planifié',
+                    fired: 'Déclenché',
+                    haEnabled: 'Événements actifs',
+                    haDisabled: 'Événements désactivés (hors HA)',
+                    astronomical_dawn: 'Aube astronomique',
+                    nautical_dawn: 'Aube nautique',
+                    civil_dawn: 'Aube civile',
+                    sunrise: 'Lever du soleil',
+                    solar_noon: 'Midi solaire',
+                    sunset: 'Coucher du soleil',
+                    civil_dusk: 'Crépuscule civil',
+                    nautical_dusk: 'Crépuscule nautique',
+                    astronomical_dusk: 'Crépuscule astronomique'
                 }
             }
         };
@@ -883,6 +1016,20 @@
                             <div class="stat-label">${t('position')}</div>
                             <div class="stat-value">${data.latitude.toFixed(2)}°, ${data.longitude.toFixed(2)}°</div>
                         </div>
+                    </div>
+                </div>
+                
+                <!-- HA Events Section -->
+                <div class="card events-section">
+                    <div class="card-header">
+                        <div class="card-icon">🔔</div>
+                        <div>
+                            <div class="card-title">${t('events.title')}</div>
+                            <div class="card-subtitle" id="ha-status">...</div>
+                        </div>
+                    </div>
+                    <div id="events-list" class="events-list">
+                        <div class="event-loading">Loading events...</div>
                     </div>
                 </div>
                 
@@ -1117,6 +1264,83 @@
             }
         }
         
+        // ==========================================
+        // Events Functions
+        // ==========================================
+        
+        const eventIcons = {
+            'astronomical_dawn': '🌌',
+            'nautical_dawn': '⚓',
+            'civil_dawn': '🌅',
+            'sunrise': '☀️',
+            'solar_noon': '🌞',
+            'sunset': '🌇',
+            'civil_dusk': '🌆',
+            'nautical_dusk': '⚓',
+            'astronomical_dusk': '🌌'
+        };
+        
+        async function fetchEventsData() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/events`);
+                return await response.json();
+            } catch (error) {
+                console.error('Error loading events:', error);
+                return null;
+            }
+        }
+        
+        async function renderEvents() {
+            const eventsData = await fetchEventsData();
+            const eventsList = document.getElementById('events-list');
+            const haStatus = document.getElementById('ha-status');
+            
+            if (!eventsData || !eventsList) return;
+            
+            // Update HA status badge
+            if (haStatus) {
+                if (eventsData.ha_available) {
+                    haStatus.innerHTML = `<span class="ha-status-badge enabled">✓ ${t('events.haEnabled')}</span>`;
+                } else {
+                    haStatus.innerHTML = `<span class="ha-status-badge disabled">⚠ ${t('events.haDisabled')}</span>`;
+                }
+            }
+            
+            // Render events list
+            if (!eventsData.events || eventsData.events.length === 0) {
+                eventsList.innerHTML = `<div class="event-loading">No events scheduled</div>`;
+                return;
+            }
+            
+            const now = new Date();
+            let nextEventFound = false;
+            
+            let html = eventsData.events.map(event => {
+                const eventTime = event.timestamp ? new Date(event.timestamp) : null;
+                const isPast = event.fired;
+                const isNext = !isPast && !nextEventFound && eventTime && eventTime > now;
+                
+                if (isNext) nextEventFound = true;
+                
+                const statusClass = isPast ? 'past' : (isNext ? 'next' : 'upcoming');
+                const icon = eventIcons[event.phase] || '📍';
+                const eventName = t(`events.${event.phase}`) || event.phase;
+                const statusText = isPast ? t('events.fired') : (isNext ? t('events.nextEvent') : t('events.scheduled'));
+                const statusBadgeClass = isPast ? 'fired' : 'pending';
+                
+                return `
+                    <div class="event-item ${statusClass}">
+                        <span class="event-icon">${icon}</span>
+                        <span class="event-name">${eventName}</span>
+                        <span class="event-time">${event.time || '--:--'}</span>
+                        <span class="event-status ${statusBadgeClass}">${statusText}</span>
+                    </div>
+                `;
+            }).join('');
+            
+            eventsList.innerHTML = html;
+        }
+        
         async function init() {
             const data = await fetchSolarData();
             if (data) {
@@ -1127,14 +1351,21 @@
                 renderContent(data);
                 await renderChart();
                 
+                // Load and render events
+                await renderEvents();
+                
                 // Update time every second
                 setInterval(updateTime, 1000);
+                
+                // Refresh events every 30 seconds
+                setInterval(renderEvents, 30 * 1000);
                 
                 // Refresh data every 5 minutes
                 setInterval(async () => {
                     const newData = await fetchSolarData();
                     if (newData) {
                         renderContent(newData);
+                        await renderEvents();
                     }
                 }, 5 * 60 * 1000);
             }

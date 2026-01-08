@@ -31,6 +31,8 @@ Complete solar ephemeris based on NOAA algorithm. Shows sunrise/sunset, civil/na
 - 🌆 Civil, nautical & astronomical twilights
 - ⏱️ Day length tracking with daily comparisons
 - 📊 Annual visualization of day length
+- 🔔 Home Assistant events when phases are reached
+- 📡 HA sensors for all solar times
 - 🌍 Interactive map for location configuration
 - 🔄 Auto-refresh every 5 minutes
 - 🌍 Multi-language support (auto-detects from HA)

@@ -16,6 +16,7 @@ from solar_calculator import (
     CompleteSolarInfo,
     TwilightType
 )
+from event_service import event_service
 
 app = Flask(__name__, 
             template_folder='templates',
@@ -213,6 +214,13 @@ def get_solar_data():
     model = CompleteSolarModel(lat, lon, tz_offset)
     info = model.current_solar_info
     
+    # Add location info for event service
+    info.latitude = lat
+    info.longitude = lon
+    
+    # Schedule events for Home Assistant
+    event_service.schedule_events(info)
+    
     # Calculate progress
     progress = calculate_progress(info)
     
@@ -366,8 +374,54 @@ def health():
         "status": "ok", 
         "version": "1.0.0", 
         "addon": "homesolar",
-        "language": get_language()
+        "language": get_language(),
+        "events_enabled": event_service.ha_available
     })
+
+
+@app.route('/api/events')
+def get_events():
+    """API to get scheduled events status"""
+    events = []
+    for phase, event in event_service.scheduled_events.items():
+        events.append({
+            "phase": phase.value,
+            "time": event.time.strftime("%H:%M:%S") if event.time else None,
+            "timestamp": event.time.isoformat() if event.time else None,
+            "fired": event.fired
+        })
+    
+    # Sort by time
+    events.sort(key=lambda x: x["timestamp"] or "")
+    
+    return jsonify({
+        "events": events,
+        "ha_available": event_service.ha_available,
+        "running": event_service.running
+    })
+
+
+# Start event service when module loads
+def initialize_app():
+    """Initialize the application and start services"""
+    # Start the event monitoring service
+    event_service.start()
+    
+    # Load initial solar data to schedule events
+    lat, lon = get_location()
+    tz_offset = get_timezone_offset(TIMEZONE)
+    model = CompleteSolarModel(lat, lon, tz_offset)
+    info = model.current_solar_info
+    info.latitude = lat
+    info.longitude = lon
+    event_service.schedule_events(info)
+    
+    app.logger.info(f"HomeSolar initialized - Events service running: {event_service.ha_available}")
+
+
+# Initialize on first request
+with app.app_context():
+    initialize_app()
 
 
 if __name__ == '__main__':

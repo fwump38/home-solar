@@ -16,7 +16,9 @@ Complete solar ephemeris Home Assistant add-on based on NOAA (National Oceanic a
 - ⏱️ **Day length** - With comparison to previous day
 - 📊 **Annual chart** - Visualization of day length over the year
 - 🌙 **Day/night progress** - Real-time progress bar
-- 🔄 **Auto-refresh** - Data updated every 5 minutes
+- � **Home Assistant Events** - Fires events when solar phases are reached
+- 📡 **HA Sensors** - Creates sensors for all solar times
+- �🔄 **Auto-refresh** - Data updated every 5 minutes
 - 🌍 **Multi-language** - Auto-detects language from Home Assistant (English & French supported)
 - 📍 **Interactive map** - Configure your location directly from the interface using Leaflet
 
@@ -142,6 +144,134 @@ Response:
 
 ```
 GET /api/chart?lat={latitude}&lon={longitude}
+```
+
+### Events Status
+
+```
+GET /api/events
+```
+
+Response:
+```json
+{
+  "events": [
+    {"phase": "astronomical_dawn", "time": "06:51:23", "fired": true},
+    {"phase": "nautical_dawn", "time": "07:29:45", "fired": true},
+    {"phase": "civil_dawn", "time": "08:08:12", "fired": false},
+    {"phase": "sunrise", "time": "08:43:00", "fired": false},
+    {"phase": "solar_noon", "time": "12:57:30", "fired": false},
+    {"phase": "sunset", "time": "17:12:00", "fired": false},
+    {"phase": "civil_dusk", "time": "17:47:00", "fired": false},
+    {"phase": "nautical_dusk", "time": "18:26:00", "fired": false},
+    {"phase": "astronomical_dusk", "time": "19:04:00", "fired": false}
+  ],
+  "ha_available": true,
+  "running": true
+}
+```
+
+## Home Assistant Integration
+
+### Events
+
+HomeSolar fires Home Assistant events when solar phases are reached. You can use these events in automations.
+
+#### Event Type: `homesolar_phase`
+
+Fired for each solar phase (dawn, sunrise, noon, sunset, dusk).
+
+**Event data:**
+```yaml
+phase: sunrise  # Phase name
+timestamp: "2026-01-08T08:43:00"
+latitude: 48.8566
+longitude: 2.3522
+scheduled_time: "2026-01-08T08:43:00"
+```
+
+**Available phases:**
+| Phase | Description |
+|-------|-------------|
+| `astronomical_dawn` | Start of astronomical twilight (sun 18° below horizon) |
+| `nautical_dawn` | Start of nautical twilight (sun 12° below horizon) |
+| `civil_dawn` | Start of civil twilight (sun 6° below horizon) |
+| `sunrise` | Sunrise (sun's upper edge at horizon) |
+| `solar_noon` | Solar noon (sun at highest point) |
+| `sunset` | Sunset (sun's upper edge at horizon) |
+| `civil_dusk` | End of civil twilight |
+| `nautical_dusk` | End of nautical twilight |
+| `astronomical_dusk` | End of astronomical twilight |
+
+### Sensors
+
+HomeSolar creates sensors in Home Assistant:
+
+| Sensor | Description |
+|--------|-------------|
+| `sensor.homesolar_sunrise` | Today's sunrise time |
+| `sensor.homesolar_sunset` | Today's sunset time |
+| `sensor.homesolar_solar_noon` | Solar noon time |
+| `sensor.homesolar_day_length` | Day duration |
+| `sensor.homesolar_current_phase` | Current solar phase |
+| `sensor.homesolar_next_event` | Next solar event |
+| `sensor.homesolar_civil_dawn` | Civil dawn time |
+| `sensor.homesolar_civil_dusk` | Civil dusk time |
+| `sensor.homesolar_nautical_dawn` | Nautical dawn time |
+| `sensor.homesolar_nautical_dusk` | Nautical dusk time |
+| `sensor.homesolar_astronomical_dawn` | Astronomical dawn time |
+| `sensor.homesolar_astronomical_dusk` | Astronomical dusk time |
+
+### Automation Examples
+
+#### Turn on lights at civil dusk
+
+```yaml
+automation:
+  - alias: "Turn on outdoor lights at civil dusk"
+    trigger:
+      - platform: event
+        event_type: homesolar_phase
+        event_data:
+          phase: civil_dusk
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.outdoor_lights
+```
+
+#### Morning announcement at sunrise
+
+```yaml
+automation:
+  - alias: "Good morning announcement"
+    trigger:
+      - platform: event
+        event_type: homesolar_phase
+        event_data:
+          phase: sunrise
+    action:
+      - service: tts.speak
+        data:
+          message: "Good morning! The sun has risen."
+        target:
+          entity_id: tts.google_en_com
+```
+
+#### Close blinds at nautical dusk
+
+```yaml
+automation:
+  - alias: "Close blinds at nautical dusk"
+    trigger:
+      - platform: event
+        event_type: homesolar_phase
+        event_data:
+          phase: nautical_dusk
+    action:
+      - service: cover.close_cover
+        target:
+          entity_id: cover.all_blinds
 ```
 
 ## Calculation Algorithm
