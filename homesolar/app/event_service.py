@@ -155,6 +155,7 @@ class HomeAssistantEventService:
             "civil_dusk": "mdi:city",
             "nautical_dusk": "mdi:sail-boat",
             "astronomical_dusk": "mdi:weather-night",
+            "elevation": "mdi:elevation-rise",
         }
         return icons.get(sensor_name, "mdi:sun-wireless")
     
@@ -204,6 +205,15 @@ class HomeAssistantEventService:
     
     def _update_all_sensors(self, solar_info) -> None:
         """Update all Home Assistant sensors with current solar data"""
+        
+        # Location sensors (including elevation)
+        if hasattr(solar_info, 'elevation'):
+            self.update_sensor("elevation", f"{solar_info.elevation:.0f}", {
+                "unit_of_measurement": "m",
+                "elevation_meters": solar_info.elevation,
+                "latitude": getattr(solar_info, 'latitude', None),
+                "longitude": getattr(solar_info, 'longitude', None)
+            })
         
         # Time sensors
         if solar_info.sunrise:

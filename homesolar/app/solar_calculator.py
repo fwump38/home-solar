@@ -40,6 +40,7 @@ class CompleteSolarInfo:
     date: datetime
     latitude: float
     longitude: float
+    elevation: float = 0.0  # Altitude en mètres au-dessus du niveau de la mer
     
     # Lever et coucher
     sunrise: Optional[datetime] = None
@@ -103,15 +104,35 @@ class SolarCalculator:
     EARTH_TILT = 23.4397  # Inclinaison axiale de la Terre en degrés
     
     @staticmethod
-    def _get_solar_altitude(twilight_type: TwilightType) -> float:
-        """Retourne l'altitude solaire pour un type de crépuscule"""
+    def _get_solar_altitude(twilight_type: TwilightType, elevation: float = 0.0) -> float:
+        """
+        Retourne l'altitude solaire pour un type de crépuscule,
+        ajustée pour la dépression de l'horizon due à l'élévation.
+        
+        La dépression de l'horizon est calculée par:
+        dépression ≈ 0.0293 × √(élévation) en degrés
+        
+        Cette correction fait que le soleil se lève plus tôt et se couche
+        plus tard quand l'observateur est en altitude.
+        """
         altitudes = {
             TwilightType.SUNRISE: -0.833,
             TwilightType.CIVIL: -6.0,
             TwilightType.NAUTICAL: -12.0,
             TwilightType.ASTRONOMICAL: -18.0
         }
-        return altitudes.get(twilight_type, -0.833)
+        base_altitude = altitudes.get(twilight_type, -0.833)
+        
+        # Calculer la dépression de l'horizon due à l'élévation
+        # Formule: dépression (degrés) = 0.0293 * sqrt(altitude en mètres)
+        # Cela correspond à environ 1.76 arcmin par racine de mètre
+        if elevation > 0:
+            horizon_depression = 0.0293 * math.sqrt(elevation)
+            # On soustrait car une dépression de l'horizon équivaut à
+            # un soleil qui atteint l'horizon apparent plus tôt/tard
+            return base_altitude - horizon_depression
+        
+        return base_altitude
     
     @staticmethod
     def _deg_to_rad(degrees: float) -> float:
@@ -134,9 +155,17 @@ class SolarCalculator:
     
     @classmethod
     def calculate(cls, date: datetime, latitude: float, longitude: float, 
-                  twilight_type: TwilightType = TwilightType.SUNRISE) -> SolarTimes:
+                  twilight_type: TwilightType = TwilightType.SUNRISE,
+                  elevation: float = 0.0) -> SolarTimes:
         """
-        Calcule les heures solaires pour une date, position et type de crépuscule donnés
+        Calcule les heures solaires pour une date, position et type de crépuscule donnés.
+        
+        Args:
+            date: Date du calcul
+            latitude: Latitude en degrés
+            longitude: Longitude en degrés
+            twilight_type: Type de crépuscule (lever/civil/nautique/astronomique)
+            elevation: Altitude en mètres au-dessus du niveau de la mer
         """
         # Normaliser à minuit
         date = date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -176,8 +205,8 @@ class SolarCalculator:
         sin_delta = math.sin(lambda_rad) * math.sin(cls._deg_to_rad(cls.EARTH_TILT))
         cos_delta = math.cos(math.asin(sin_delta))
         
-        # Angle horaire
-        solar_altitude = cls._get_solar_altitude(twilight_type)
+        # Angle horaire (avec correction d'élévation)
+        solar_altitude = cls._get_solar_altitude(twilight_type, elevation)
         cos_omega = ((math.sin(cls._deg_to_rad(solar_altitude)) - 
                      math.sin(cls._deg_to_rad(latitude)) * sin_delta) / 
                     (math.cos(cls._deg_to_rad(latitude)) * cos_delta))
@@ -215,26 +244,33 @@ class SolarCalculator:
     
     @classmethod
     def get_complete_solar_info(cls, date: datetime, latitude: float, 
-                                 longitude: float) -> CompleteSolarInfo:
+                                 longitude: float, elevation: float = 0.0) -> CompleteSolarInfo:
         """
-        Calcule toutes les informations solaires pour une date et position données
+        Calcule toutes les informations solaires pour une date et position données.
+        
+        Args:
+            date: Date du calcul
+            latitude: Latitude en degrés
+            longitude: Longitude en degrés
+            elevation: Altitude en mètres au-dessus du niveau de la mer
         """
         # Calculer le lever/coucher du soleil
-        sunrise_times = cls.calculate(date, latitude, longitude, TwilightType.SUNRISE)
+        sunrise_times = cls.calculate(date, latitude, longitude, TwilightType.SUNRISE, elevation)
         
         # Calculer les crépuscules civils
-        civil_times = cls.calculate(date, latitude, longitude, TwilightType.CIVIL)
+        civil_times = cls.calculate(date, latitude, longitude, TwilightType.CIVIL, elevation)
         
         # Calculer les crépuscules nautiques
-        nautical_times = cls.calculate(date, latitude, longitude, TwilightType.NAUTICAL)
+        nautical_times = cls.calculate(date, latitude, longitude, TwilightType.NAUTICAL, elevation)
         
         # Calculer les crépuscules astronomiques
-        astronomical_times = cls.calculate(date, latitude, longitude, TwilightType.ASTRONOMICAL)
+        astronomical_times = cls.calculate(date, latitude, longitude, TwilightType.ASTRONOMICAL, elevation)
         
         return CompleteSolarInfo(
             date=date,
             latitude=latitude,
             longitude=longitude,
+            elevation=elevation,
             sunrise=sunrise_times.sunrise,
             sunset=sunrise_times.sunset,
             solar_noon=sunrise_times.solar_noon,
@@ -255,15 +291,16 @@ class CompleteSolarModel:
     et une projection sur une année complète.
     """
     
-    def __init__(self, latitude: float, longitude: float, timezone_offset: int = 0):
+    def __init__(self, latitude: float, longitude: float, timezone_offset: int = 0, elevation: float = 0.0):
         self.latitude = latitude
         self.longitude = longitude
         self.timezone_offset = timezone_offset
+        self.elevation = elevation
         
         current_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         
         self.current_solar_info = SolarCalculator.get_complete_solar_info(
-            current_date, latitude, longitude
+            current_date, latitude, longitude, elevation
         )
         
         # Appliquer le décalage horaire
@@ -277,7 +314,7 @@ class CompleteSolarModel:
         while iteration_date.date() != next_year.date():
             iteration_date += timedelta(days=1)
             day_info = SolarCalculator.get_complete_solar_info(
-                iteration_date, latitude, longitude
+                iteration_date, latitude, longitude, elevation
             )
             self._apply_timezone_offset(day_info)
             self.relative_map[iteration_date.date()] = day_info

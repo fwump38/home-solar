@@ -45,6 +45,31 @@ def load_config():
     return None
 
 
+def get_elevation(latitude: float, longitude: float) -> float:
+    """
+    Get elevation from Open-Elevation API.
+    Returns elevation in meters, or 0 if unavailable.
+    """
+    try:
+        import urllib.request
+        import urllib.parse
+        
+        url = f"https://api.open-elevation.com/api/v1/lookup?locations={latitude},{longitude}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'HomeSolar/1.0'})
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            
+        if data and 'results' in data and len(data['results']) > 0:
+            elevation = data['results'][0].get('elevation', 0)
+            app.logger.info(f"Elevation retrieved: {elevation}m for ({latitude}, {longitude})")
+            return float(elevation) if elevation is not None else 0.0
+    except Exception as e:
+        app.logger.warning(f"Could not get elevation from Open-Elevation API: {e}")
+    
+    return 0.0
+
+
 def save_config(config):
     """Save configuration to persistent storage"""
     try:
@@ -58,15 +83,19 @@ def save_config(config):
 
 
 def get_location():
-    """Get current location (from config file or defaults)"""
+    """Get current location and elevation (from config file or defaults)"""
     config = load_config()
     if config:
-        return config.get('latitude', DEFAULT_LATITUDE), config.get('longitude', DEFAULT_LONGITUDE)
-    return DEFAULT_LATITUDE, DEFAULT_LONGITUDE
+        return (
+            config.get('latitude', DEFAULT_LATITUDE),
+            config.get('longitude', DEFAULT_LONGITUDE),
+            config.get('elevation', 0.0)
+        )
+    return DEFAULT_LATITUDE, DEFAULT_LONGITUDE, 0.0
 
 
 # Current location (loaded at startup, can be updated via API)
-LATITUDE, LONGITUDE = get_location()
+LATITUDE, LONGITUDE, ELEVATION = get_location()
 
 # Supported languages
 SUPPORTED_LANGUAGES = ['en', 'fr']
@@ -208,16 +237,18 @@ def get_solar_data():
     """API to retrieve solar data"""
     lat = request.args.get('lat', LATITUDE, type=float)
     lon = request.args.get('lon', LONGITUDE, type=float)
+    elev = request.args.get('elevation', ELEVATION, type=float)
     
     tz_offset = get_timezone_offset(TIMEZONE)
     
-    # Calculate solar information
-    model = CompleteSolarModel(lat, lon, tz_offset)
+    # Calculate solar information with elevation correction
+    model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev)
     info = model.current_solar_info
     
     # Add location info for event service
     info.latitude = lat
     info.longitude = lon
+    info.elevation = elev
     
     # Schedule events for Home Assistant
     event_service.schedule_events(info)
@@ -236,6 +267,7 @@ def get_solar_data():
         "date": datetime.now().strftime("%A %d %B %Y"),
         "latitude": lat,
         "longitude": lon,
+        "elevation": elev,
         "timezone": TIMEZONE,
         "sunrise": info.sunrise.strftime("%H:%M") if info.sunrise else None,
         "sunset": info.sunset.strftime("%H:%M") if info.sunset else None,
@@ -268,9 +300,10 @@ def get_chart_data():
     """API for annual chart data"""
     lat = request.args.get('lat', LATITUDE, type=float)
     lon = request.args.get('lon', LONGITUDE, type=float)
+    elev = request.args.get('elevation', ELEVATION, type=float)
     
     tz_offset = get_timezone_offset(TIMEZONE)
-    model = CompleteSolarModel(lat, lon, tz_offset)
+    model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev)
     
     return jsonify(model.get_chart_data())
 
@@ -278,11 +311,12 @@ def get_chart_data():
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Get current location configuration"""
-    lat, lon = get_location()
+    lat, lon, elev = get_location()
     config = load_config() or {}
     return jsonify({
         "latitude": lat,
         "longitude": lon,
+        "elevation": elev,
         "timezone": TIMEZONE,
         "location_name": config.get('location_name', ''),
         "is_configured": CONFIG_FILE.exists()
@@ -292,7 +326,7 @@ def get_config():
 @app.route('/api/config', methods=['POST'])
 def set_config():
     """Save location configuration from map selection"""
-    global LATITUDE, LONGITUDE
+    global LATITUDE, LONGITUDE, ELEVATION
     
     data = request.get_json()
     if not data:
@@ -301,6 +335,8 @@ def set_config():
     lat = data.get('latitude')
     lon = data.get('longitude')
     location_name = data.get('location_name', '')
+    # Allow manual elevation override, otherwise fetch automatically
+    manual_elevation = data.get('elevation')
     
     if lat is None or lon is None:
         return jsonify({"error": "Latitude and longitude required"}), 400
@@ -314,9 +350,16 @@ def set_config():
         if not (-180 <= lon <= 180):
             return jsonify({"error": "Longitude must be between -180 and 180"}), 400
         
+        # Get elevation: use manual value if provided, otherwise fetch from API
+        if manual_elevation is not None:
+            elev = float(manual_elevation)
+        else:
+            elev = get_elevation(lat, lon)
+        
         config = {
             "latitude": lat,
             "longitude": lon,
+            "elevation": elev,
             "location_name": location_name,
             "updated_at": datetime.now().isoformat()
         }
@@ -325,10 +368,12 @@ def set_config():
             # Update global variables
             LATITUDE = lat
             LONGITUDE = lon
+            ELEVATION = elev
             return jsonify({
                 "success": True,
                 "latitude": lat,
                 "longitude": lon,
+                "elevation": elev,
                 "location_name": location_name
             })
         else:
@@ -368,6 +413,29 @@ def search_location():
     except Exception as e:
         app.logger.error(f"Search error: {e}")
         return jsonify([])
+
+
+@app.route('/api/elevation')
+def get_elevation_api():
+    """
+    API to get elevation for given coordinates.
+    Uses Open-Elevation API (SRTM data from NASA).
+    """
+    lat = request.args.get('lat', type=float)
+    lon = request.args.get('lon', type=float)
+    
+    if lat is None or lon is None:
+        return jsonify({"error": "lat and lon parameters required"}), 400
+    
+    elevation = get_elevation(lat, lon)
+    
+    return jsonify({
+        "latitude": lat,
+        "longitude": lon,
+        "elevation": elevation,
+        "unit": "meters",
+        "source": "Open-Elevation API (SRTM)"
+    })
 
 
 @app.route('/api/health')
@@ -411,15 +479,16 @@ def initialize_app():
     event_service.start()
     
     # Load initial solar data to schedule events
-    lat, lon = get_location()
+    lat, lon, elev = get_location()
     tz_offset = get_timezone_offset(TIMEZONE)
-    model = CompleteSolarModel(lat, lon, tz_offset)
+    model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev)
     info = model.current_solar_info
     info.latitude = lat
     info.longitude = lon
+    info.elevation = elev
     event_service.schedule_events(info)
     
-    app.logger.info(f"HomeSolar initialized - Events service running: {event_service.ha_available}")
+    app.logger.info(f"HomeSolar initialized at ({lat}, {lon}, {elev}m) - Events service running: {event_service.ha_available}")
 
 
 # Initialize on first request

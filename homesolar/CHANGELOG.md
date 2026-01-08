@@ -1,20 +1,39 @@
 # Changelog
 
-## [1.1.0] - 2026-01-08
+## [1.2.0] 
+
+### Added
+- **Elevation support**: Automatic elevation retrieval from Open-Elevation API (NASA SRTM data)
+- Horizon depression correction for more accurate sunrise/sunset times at altitude
+- New `/api/elevation` endpoint to query elevation for any coordinates
+- Elevation sensor in Home Assistant (`sensor.homesolar_elevation`)
+- Elevation stored in configuration and passed to all calculations
+
+### Changed
+- Solar calculations now account for observer elevation (horizon depression formula)
+- Location configuration now includes elevation (auto-fetched or manual override)
+- All API responses now include elevation data
+
+### Technical
+- Modified `SolarCalculator._get_solar_altitude()` to apply horizon depression correction
+- Added `elevation` parameter to `CompleteSolarModel` and `CompleteSolarInfo`
+- Integrated Open-Elevation API call on location save
+
+## [1.1.0] 
 - Add HA Sensors 
 
-## [1.0.5] - 2026-01-08
+## [1.0.5] 
 
 ### Added
 - GitHub Copilot instructions for project consistency
 - .gitignore for local development
 
-## [1.0.4] - 2026-01-08
+## [1.0.4] 
 
 ### Fixed
 - Minor bug fixes and improvements
 
-## [1.0.3] - 2026-01-08
+## [1.0.3] 
 
 ### Added
 - Language selection in add-on configuration (auto, en, fr)
@@ -29,7 +48,7 @@
 - Fixed bashio::info.language command not found error
 - Improved s6-overlay v3 compatibility
 
-## [1.0.0] - 2026-01-08
+## [1.0.0] 
 
 ### Added
 - Initial release of HomeSolar
