@@ -1,0 +1,40 @@
+# HomeSolar - GitHub Copilot Instructions
+
+**Project**: HomeSolar - Solar Ephemeris add-on for Home Assistant  
+**Type**: Docker add-on with Flask backend  
+**Key Tech**: Python 3.11, Flask, Alpine Linux, s6-overlay v3, Home Assistant integration
+
+## Quick Summary
+HomeSolar is a Home Assistant add-on providing NOAA-based solar calculations with interactive maps, multi-language support, and real-time visualization.
+
+## File Organization
+- `homesolar/app/` - Flask application and frontend
+- `homesolar/config.yaml` - Add-on configuration (CRITICAL)
+- `homesolar/rootfs/` - Docker filesystem, scripts, s6-overlay services
+- `homesolar/translations/` - i18n files
+- `.github/copilot-instructions.md` - Detailed guidelines
+
+## Before Making Changes
+1. ✅ Check current version in `config.yaml`
+2. ✅ Understand s6-overlay v3 requirements (init: false)
+3. ✅ Verify script syntax (bashio library)
+4. ✅ Update CHANGELOG.md
+
+## After Changes
+1. ✅ Increment version (semver: major.minor.patch)
+2. ✅ Commit with clear message
+3. ✅ Push to main branch
+4. ✅ Rebuild in Home Assistant
+
+## Key Files NOT to Modify Without Care
+- `config.yaml` - Version, schema, options (breaking changes possible)
+- `Dockerfile` - Base image selection
+- `rootfs/etc/s6-overlay/s6-rc.d/*/` - Service startup (s6-overlay v3)
+
+## Emergency Help
+- For s6-overlay errors: Check service file syntax in rootfs/
+- For bashio errors: Verify `bashio::` function calls
+- For Flask errors: Check logs with `ha addons log homesolar`
+- For language issues: Check translations/ directory and get_language()
+
+**Documentation**: See `.github/copilot-instructions.md` for full details
