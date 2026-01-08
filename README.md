@@ -1,7 +1,7 @@
 # HomeSolar - Solar Ephemeris for Home Assistant
 
 [![Home Assistant Add-on](https://img.shields.io/badge/Home%20Assistant-Add--on-blue.svg)](https://www.home-assistant.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.en.html)
 
 Complete solar ephemeris Home Assistant add-on based on NOAA (National Oceanic and Atmospheric Administration) algorithm.
 
@@ -18,6 +18,7 @@ Complete solar ephemeris Home Assistant add-on based on NOAA (National Oceanic a
 - 🌙 **Day/night progress** - Real-time progress bar
 - 🔄 **Auto-refresh** - Data updated every 5 minutes
 - 🌍 **Multi-language** - Auto-detects language from Home Assistant (English & French supported)
+- 📍 **Interactive map** - Configure your location directly from the interface using Leaflet
 
 ## Installation
 
@@ -38,6 +39,19 @@ Complete solar ephemeris Home Assistant add-on based on NOAA (National Oceanic a
 
 ## Configuration
 
+The add-on can be configured in two ways:
+
+### Option 1: Interactive Map (Recommended)
+
+1. Open the HomeSolar panel from the sidebar
+2. Click the **⚙️ Settings** button
+3. Search for a city or click directly on the map
+4. Click **Save Location**
+
+The location is saved persistently and will be used even after restart.
+
+### Option 2: YAML Configuration
+
 ```yaml
 latitude: 48.8566      # Your latitude (default: Paris)
 longitude: 2.3522      # Your longitude
@@ -45,7 +59,7 @@ timezone: "Europe/Paris"  # Your timezone
 auto_detect_language: true  # Auto-detect language from HA
 ```
 
-> 💡 **Tip**: The add-on can automatically use coordinates configured in Home Assistant.
+> 💡 **Tip**: The interactive map configuration takes priority over YAML settings.
 
 ## Access the Interface
 
@@ -179,7 +193,7 @@ Contributions are welcome! Feel free to:
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+ See [LICENSE](LICENSE) for details.
 
 ## Credits
 

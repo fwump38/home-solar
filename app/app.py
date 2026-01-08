@@ -6,6 +6,7 @@ Complete solar ephemeris based on NOAA algorithm
 import os
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from flask import Flask, render_template, jsonify, request
 import pytz
 
@@ -20,13 +21,51 @@ app = Flask(__name__,
             template_folder='templates',
             static_folder='static')
 
-# Configuration from environment variables
-LATITUDE = float(os.environ.get('LATITUDE', 48.8566))
-LONGITUDE = float(os.environ.get('LONGITUDE', 2.3522))
+# Configuration file path (persistent storage)
+CONFIG_FILE = Path(os.environ.get('CONFIG_PATH', '/share/homesolar/config.json'))
+
+# Default configuration from environment variables
+DEFAULT_LATITUDE = float(os.environ.get('LATITUDE', 48.8566))
+DEFAULT_LONGITUDE = float(os.environ.get('LONGITUDE', 2.3522))
 TIMEZONE = os.environ.get('TIMEZONE', 'Europe/Paris')
 HA_LANGUAGE = os.environ.get('HA_LANGUAGE', 'en')
 AUTO_DETECT_LANGUAGE = os.environ.get('AUTO_DETECT_LANGUAGE', 'true').lower() == 'true'
 INGRESS_ENTRY = os.environ.get('INGRESS_ENTRY', '')
+
+
+def load_config():
+    """Load configuration from persistent storage"""
+    try:
+        if CONFIG_FILE.exists():
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        app.logger.error(f"Error loading config: {e}")
+    return None
+
+
+def save_config(config):
+    """Save configuration to persistent storage"""
+    try:
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+        return True
+    except Exception as e:
+        app.logger.error(f"Error saving config: {e}")
+        return False
+
+
+def get_location():
+    """Get current location (from config file or defaults)"""
+    config = load_config()
+    if config:
+        return config.get('latitude', DEFAULT_LATITUDE), config.get('longitude', DEFAULT_LONGITUDE)
+    return DEFAULT_LATITUDE, DEFAULT_LONGITUDE
+
+
+# Current location (loaded at startup, can be updated via API)
+LATITUDE, LONGITUDE = get_location()
 
 # Supported languages
 SUPPORTED_LANGUAGES = ['en', 'fr']
@@ -163,7 +202,8 @@ def get_solar_data():
     lon = request.args.get('lon', LONGITUDE, type=float)
     
     tz_offset = get_timezone_offset(TIMEZONE)
-    ate solar information
+    
+    # Calculate solar information
     model = CompleteSolarModel(lat, lon, tz_offset)
     info = model.current_solar_info
     
@@ -174,7 +214,6 @@ def get_solar_data():
     phase = get_current_phase(info)
     
     # Difference from yesterday
-    # Différence avec hier
     diff = model.get_diff()
     diff_sign = model.get_sign()
     
@@ -199,7 +238,8 @@ def get_solar_data():
         "diff_sign": diff_sign,
         "diff_positive": diff.total_seconds() >= 0,
         "progress": progress,
-        "phase": phase,,
+        "phase": phase,
+        "current_time": datetime.now().strftime("%H:%M:%S"),
         "language": get_language()
     }
     
@@ -208,8 +248,7 @@ def get_solar_data():
 
 @app.route('/api/chart')
 def get_chart_data():
-    """API for annual chart data
-    """API pour les données du graphique annuel"""
+    """API for annual chart data"""
     lat = request.args.get('lat', LATITUDE, type=float)
     lon = request.args.get('lon', LONGITUDE, type=float)
     
@@ -217,6 +256,101 @@ def get_chart_data():
     model = CompleteSolarModel(lat, lon, tz_offset)
     
     return jsonify(model.get_chart_data())
+
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    """Get current location configuration"""
+    lat, lon = get_location()
+    config = load_config() or {}
+    return jsonify({
+        "latitude": lat,
+        "longitude": lon,
+        "timezone": TIMEZONE,
+        "location_name": config.get('location_name', ''),
+        "is_configured": CONFIG_FILE.exists()
+    })
+
+
+@app.route('/api/config', methods=['POST'])
+def set_config():
+    """Save location configuration from map selection"""
+    global LATITUDE, LONGITUDE
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    lat = data.get('latitude')
+    lon = data.get('longitude')
+    location_name = data.get('location_name', '')
+    
+    if lat is None or lon is None:
+        return jsonify({"error": "Latitude and longitude required"}), 400
+    
+    try:
+        lat = float(lat)
+        lon = float(lon)
+        
+        if not (-90 <= lat <= 90):
+            return jsonify({"error": "Latitude must be between -90 and 90"}), 400
+        if not (-180 <= lon <= 180):
+            return jsonify({"error": "Longitude must be between -180 and 180"}), 400
+        
+        config = {
+            "latitude": lat,
+            "longitude": lon,
+            "location_name": location_name,
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        if save_config(config):
+            # Update global variables
+            LATITUDE = lat
+            LONGITUDE = lon
+            return jsonify({
+                "success": True,
+                "latitude": lat,
+                "longitude": lon,
+                "location_name": location_name
+            })
+        else:
+            return jsonify({"error": "Failed to save configuration"}), 500
+            
+    except ValueError as e:
+        return jsonify({"error": f"Invalid coordinates: {e}"}), 400
+
+
+@app.route('/api/search')
+def search_location():
+    """Search for a location using Nominatim (OpenStreetMap)"""
+    query = request.args.get('q', '')
+    if not query or len(query) < 2:
+        return jsonify([])
+    
+    try:
+        import urllib.request
+        import urllib.parse
+        
+        encoded_query = urllib.parse.quote(query)
+        url = f"https://nominatim.openstreetmap.org/search?q={encoded_query}&format=json&limit=5"
+        
+        req = urllib.request.Request(url, headers={'User-Agent': 'HomeSolar/1.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            
+        results = []
+        for item in data:
+            results.append({
+                "name": item.get('display_name', ''),
+                "latitude": float(item.get('lat', 0)),
+                "longitude": float(item.get('lon', 0))
+            })
+        
+        return jsonify(results)
+    except Exception as e:
+        app.logger.error(f"Search error: {e}")
+        return jsonify([])
 
 
 @app.route('/api/health')
