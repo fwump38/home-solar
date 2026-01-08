@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.5] - 2026-01-08
+
+### Added
+- GitHub Copilot instructions for project consistency
+- .gitignore for local development
+
 ## [1.0.4] - 2026-01-08
 
 ### Fixed

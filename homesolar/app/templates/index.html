@@ -913,11 +913,10 @@
             const chartData = await fetchChartData();
             if (!chartData || chartData.length === 0) return;
             
-            // Filter to show one point per week for better readability
-            const filteredData = chartData.filter((_, i) => i % 7 === 0);
             const locale = currentLanguage === 'fr' ? 'fr-FR' : 'en-US';
             
-            const labels = filteredData.map(d => {
+            // Use all data points (one per day)
+            const labels = chartData.map(d => {
                 const date = new Date(d.date);
                 return date.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
             });
@@ -937,10 +936,12 @@
                         labels: labels,
                         datasets: [{
                             label: currentLanguage === 'fr' ? 'Durée du jour' : 'Day length',
-                            data: filteredData.map(d => d.duration_seconds),
-                            backgroundColor: filteredData.map(d => d.color),
+                            data: chartData.map(d => d.duration_seconds),
+                            backgroundColor: chartData.map(d => d.color),
                             borderWidth: 0,
-                            borderRadius: 2
+                            borderRadius: 0,
+                            barPercentage: 1.0,
+                            categoryPercentage: 1.0
                         }]
                     },
                     options: {
@@ -952,11 +953,14 @@
                             },
                             tooltip: {
                                 callbacks: {
+                                    title: function(context) {
+                                        return chartData[context[0].dataIndex].date;
+                                    },
                                     label: function(context) {
                                         const seconds = context.raw;
                                         const hours = Math.floor(seconds / 3600);
                                         const minutes = Math.floor((seconds % 3600) / 60);
-                                        const diff = filteredData[context.dataIndex].diff_seconds;
+                                        const diff = chartData[context.dataIndex].diff_seconds;
                                         const diffMin = Math.floor(Math.abs(diff) / 60);
                                         const diffSec = Math.abs(diff) % 60;
                                         const sign = diff >= 0 ? '+' : '-';
@@ -968,12 +972,13 @@
                         scales: {
                             x: {
                                 grid: {
-                                    color: 'rgba(255, 255, 255, 0.05)'
+                                    display: false
                                 },
                                 ticks: {
                                     color: 'rgba(255, 255, 255, 0.5)',
                                     maxTicksLimit: 12,
-                                    maxRotation: 45
+                                    maxRotation: 45,
+                                    autoSkip: true
                                 }
                             },
                             y: {
@@ -1010,7 +1015,7 @@
                         datasets: [
                             {
                                 label: currentLanguage === 'fr' ? 'Lever du soleil' : 'Sunrise',
-                                data: filteredData.map(d => d.sunrise_minutes),
+                                data: chartData.map(d => d.sunrise_minutes),
                                 borderColor: '#a56890',
                                 backgroundColor: 'rgba(165, 104, 144, 0.1)',
                                 fill: false,
@@ -1021,7 +1026,7 @@
                             },
                             {
                                 label: currentLanguage === 'fr' ? 'Coucher du soleil' : 'Sunset',
-                                data: filteredData.map(d => d.sunset_minutes),
+                                data: chartData.map(d => d.sunset_minutes),
                                 borderColor: '#bb885f',
                                 backgroundColor: 'rgba(187, 136, 95, 0.1)',
                                 fill: false,
@@ -1050,6 +1055,9 @@
                             },
                             tooltip: {
                                 callbacks: {
+                                    title: function(context) {
+                                        return chartData[context[0].dataIndex].date;
+                                    },
                                     label: function(context) {
                                         const minutes = context.raw;
                                         const hours = Math.floor(minutes / 60);
@@ -1063,12 +1071,13 @@
                         scales: {
                             x: {
                                 grid: {
-                                    color: 'rgba(255, 255, 255, 0.05)'
+                                    color: 'rgba(255, 255, 255, 0.03)'
                                 },
                                 ticks: {
                                     color: 'rgba(255, 255, 255, 0.5)',
                                     maxTicksLimit: 12,
-                                    maxRotation: 45
+                                    maxRotation: 45,
+                                    autoSkip: true
                                 }
                             },
                             y: {

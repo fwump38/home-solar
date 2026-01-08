@@ -366,21 +366,8 @@ class CompleteSolarModel:
                 if previous_duration:
                     diff_seconds = duration_seconds - int(previous_duration.total_seconds())
                 
-                # Calculate color based on day length (green = longer, red = shorter)
-                # Summer ~16h (57600s), Winter ~8h (28800s), Average ~12h (43200s)
-                ratio = (duration_seconds - 28800) / (57600 - 28800)  # 0-1 scale
-                ratio = max(0, min(1, ratio))
-                
-                # Color from red (winter) to yellow to green (summer)
-                if ratio < 0.5:
-                    r = 255
-                    g = int(255 * (ratio * 2))
-                    b = 100
-                else:
-                    r = int(255 * (1 - (ratio - 0.5) * 2))
-                    g = 255
-                    b = 100
-                color = f'rgba({r}, {g}, {b}, 0.8)'
+                # Get seasonal color based on latitude and date
+                color = self._get_seasonal_color(date, self.latitude)
                 
                 # Sunrise/sunset in minutes since midnight for line chart
                 sunrise_minutes = None
@@ -406,3 +393,151 @@ class CompleteSolarModel:
                 previous_duration = duration
         
         return chart_data
+    
+    def _get_seasonal_color(self, date, latitude: float) -> str:
+        """
+        Calcule la couleur en fonction de la saison et de la zone géographique.
+        
+        Zones géographiques:
+        - Polaire: |latitude| > 66.5° (cercle polaire)
+        - Tempérée: 23.5° < |latitude| <= 66.5° (4 saisons)
+        - Tropicale: |latitude| <= 23.5° (2 saisons: sèche/humide)
+        
+        L'hémisphère sud a les saisons inversées.
+        """
+        from datetime import date as date_type
+        
+        # Normalize date to work with day of year
+        if isinstance(date, date_type):
+            day_of_year = date.timetuple().tm_yday
+        else:
+            day_of_year = date.timetuple().tm_yday
+        
+        abs_lat = abs(latitude)
+        is_southern = latitude < 0
+        
+        # Adjust day of year for southern hemisphere (6 months offset)
+        if is_southern:
+            day_of_year = (day_of_year + 182) % 365
+        
+        # Calculate seasonal progress (0-1 through the year)
+        # Starting from winter solstice (around Dec 21 = day 355)
+        # Adjusted to start from Jan 1 for simplicity
+        seasonal_progress = day_of_year / 365.0
+        
+        # Determine zone and apply appropriate color scheme
+        if abs_lat > 66.5:
+            # POLAR ZONE: Extreme contrasts, icy blues to midnight sun gold
+            return self._polar_color(seasonal_progress, day_of_year)
+        elif abs_lat > 23.5:
+            # TEMPERATE ZONE: Classic 4 seasons
+            return self._temperate_color(seasonal_progress)
+        else:
+            # TROPICAL ZONE: 2 seasons (dry/wet), less variation
+            return self._tropical_color(seasonal_progress)
+    
+    def _polar_color(self, progress: float, day_of_year: int) -> str:
+        """
+        Couleurs pour zones polaires.
+        - Nuit polaire (hiver): Bleus profonds et violets
+        - Jour polaire (été): Dorés et blancs lumineux
+        """
+        import math
+        
+        # Use sine wave for smooth transition
+        # Peak at summer solstice (around day 172)
+        angle = (day_of_year - 172) / 365.0 * 2 * math.pi
+        factor = (math.cos(angle) + 1) / 2  # 0 = winter, 1 = summer
+        
+        if factor < 0.3:
+            # Deep winter - polar night: deep blue/purple
+            r = int(30 + factor * 50)
+            g = int(40 + factor * 60)
+            b = int(120 + factor * 80)
+        elif factor < 0.5:
+            # Spring transition: cyan to light blue
+            t = (factor - 0.3) / 0.2
+            r = int(80 + t * 100)
+            g = int(150 + t * 80)
+            b = int(200 - t * 20)
+        elif factor < 0.7:
+            # Summer - midnight sun: golden white
+            t = (factor - 0.5) / 0.2
+            r = int(180 + t * 75)
+            g = int(200 + t * 55)
+            b = int(150 - t * 50)
+        else:
+            # Autumn transition: orange to purple
+            t = (factor - 0.7) / 0.3
+            r = int(255 - t * 180)
+            g = int(180 - t * 120)
+            b = int(100 + t * 60)
+        
+        return f'rgba({r}, {g}, {b}, 0.85)'
+    
+    def _temperate_color(self, progress: float) -> str:
+        """
+        Couleurs pour zones tempérées - 4 saisons classiques.
+        - Hiver (Dec-Feb): Bleus froids
+        - Printemps (Mar-May): Verts frais
+        - Été (Jun-Aug): Jaunes/oranges chauds
+        - Automne (Sep-Nov): Rouges/bruns
+        """
+        # Shift progress so winter starts at 0
+        # Jan 1 is roughly 10 days after winter solstice
+        adjusted = (progress + 0.03) % 1.0
+        
+        if adjusted < 0.25:
+            # Winter: Deep blue to light blue
+            t = adjusted / 0.25
+            r = int(60 + t * 40)
+            g = int(100 + t * 80)
+            b = int(180 + t * 40)
+        elif adjusted < 0.5:
+            # Spring: Light blue to vibrant green
+            t = (adjusted - 0.25) / 0.25
+            r = int(100 - t * 30)
+            g = int(180 + t * 75)
+            b = int(220 - t * 150)
+        elif adjusted < 0.75:
+            # Summer: Green to golden yellow/orange
+            t = (adjusted - 0.5) / 0.25
+            r = int(70 + t * 185)
+            g = int(255 - t * 55)
+            b = int(70 - t * 30)
+        else:
+            # Autumn: Orange to deep red/brown
+            t = (adjusted - 0.75) / 0.25
+            r = int(255 - t * 80)
+            g = int(200 - t * 120)
+            b = int(40 + t * 80)
+        
+        return f'rgba({r}, {g}, {b}, 0.85)'
+    
+    def _tropical_color(self, progress: float) -> str:
+        """
+        Couleurs pour zones tropicales - 2 saisons.
+        - Saison sèche: Jaunes/oranges chauds
+        - Saison humide: Verts luxuriants/turquoise
+        Variation de durée du jour minimale, couleurs plus douces.
+        """
+        import math
+        
+        # Two seasons: use sine wave with period of 6 months
+        angle = progress * 2 * math.pi
+        factor = (math.sin(angle) + 1) / 2  # 0-1, two cycles per year
+        
+        if factor < 0.5:
+            # Wet/monsoon season: Lush greens and teals
+            t = factor / 0.5
+            r = int(40 + t * 60)
+            g = int(180 + t * 40)
+            b = int(140 + t * 40)
+        else:
+            # Dry season: Warm yellows and soft oranges
+            t = (factor - 0.5) / 0.5
+            r = int(100 + t * 155)
+            g = int(220 - t * 40)
+            b = int(180 - t * 100)
+        
+        return f'rgba({r}, {g}, {b}, 0.85)'
