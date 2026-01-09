@@ -575,14 +575,14 @@ def initialize_app():
     event_service.start()
     
     # Load initial solar data to schedule events
-    lat, lon, elev = get_location()
+    lat, lon, elev, location_tz = get_location()
     tz_offset = get_timezone_offset(TIMEZONE)
     model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev)
     info = model.current_solar_info
     info.latitude = lat
     info.longitude = lon
     info.elevation = elev
-    event_service.schedule_events(info)
+    event_service.schedule_events(info, location_tz)
     
     app.logger.info(f"HomeSolar initialized at ({lat}, {lon}, {elev}m) - Events service running: {event_service.ha_available}")
 
