@@ -458,8 +458,8 @@ def set_config():
         location_tz = get_timezone_for_coordinates(lat, lon)
         app.logger.info(f"Timezone for ({lat}, {lon}): {location_tz}")
         
-        # Get location name via reverse geocoding if not provided (ONLY once here)
-        if not location_name:
+        # Get location name via reverse geocoding if not provided or empty (ONLY once here)
+        if not location_name or location_name.strip() == "":
             try:
                 import urllib.request
                 import urllib.parse
