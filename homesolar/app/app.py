@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, render_template, jsonify, request
 import pytz
+from timezonefinder import TimezoneFinder
 
 from solar_calculator import (
     SolarCalculator, 
@@ -21,6 +22,9 @@ from event_service import event_service
 app = Flask(__name__, 
             template_folder='templates',
             static_folder='static')
+
+# Timezone finder instance (singleton for performance)
+tf = TimezoneFinder()
 
 # Configuration file path (persistent storage)
 CONFIG_FILE = Path(os.environ.get('CONFIG_PATH', '/share/homesolar/config.json'))
@@ -114,6 +118,18 @@ def get_language():
     return 'en'
 
 
+def get_timezone_for_coordinates(latitude: float, longitude: float) -> str:
+    """Get timezone name from GPS coordinates using timezonefinder"""
+    try:
+        timezone_str = tf.timezone_at(lat=latitude, lng=longitude)
+        if timezone_str:
+            return timezone_str
+    except Exception as e:
+        app.logger.warning(f"Could not determine timezone for ({latitude}, {longitude}): {e}")
+    # Fallback to configured timezone
+    return TIMEZONE
+
+
 def get_timezone_offset(timezone_str: str) -> int:
     """Calculate current timezone offset"""
     try:
@@ -134,9 +150,9 @@ def format_duration(duration: timedelta) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
-def get_current_phase(info: CompleteSolarInfo) -> dict:
+def get_current_phase(info: CompleteSolarInfo, timezone_str: str = None) -> dict:
     """Determine current solar phase"""
-    tz = pytz.timezone(TIMEZONE)
+    tz = pytz.timezone(timezone_str or TIMEZONE)
     now = datetime.now(tz)
     # Convert to naive datetime for comparison with solar calculation results
     now = now.replace(tzinfo=None)
@@ -180,9 +196,9 @@ def get_current_phase(info: CompleteSolarInfo) -> dict:
     return {"phase": "night", "icon": "🌙"}
 
 
-def calculate_progress(info: CompleteSolarInfo) -> dict:
+def calculate_progress(info: CompleteSolarInfo, timezone_str: str = None) -> dict:
     """Calculate day or night progress"""
-    tz = pytz.timezone(TIMEZONE)
+    tz = pytz.timezone(timezone_str or TIMEZONE)
     now = datetime.now(tz)
     # Convert to naive datetime for comparison with solar calculation results
     now = now.replace(tzinfo=None)
@@ -245,9 +261,10 @@ def get_solar_data():
     lon = request.args.get('lon', LONGITUDE, type=float)
     elev = request.args.get('elevation', ELEVATION, type=float)
     
-    #fix 1.2.1 timezone offset calculation
-    tz_offset = get_timezone_offset(TIMEZONE)
-    tz = pytz.timezone(TIMEZONE)
+    # Get timezone from GPS coordinates (not from system config)
+    location_timezone = get_timezone_for_coordinates(lat, lon)
+    tz_offset = get_timezone_offset(location_timezone)
+    tz = pytz.timezone(location_timezone)
     now_tz = datetime.now(tz)
     
     # Calculate solar information with elevation correction and timezone-aware date
@@ -262,11 +279,11 @@ def get_solar_data():
     # Schedule events for Home Assistant
     event_service.schedule_events(info)
     
-    # Calculate progress
-    progress = calculate_progress(info)
+    # Calculate progress (pass timezone for correct time)
+    progress = calculate_progress(info, location_timezone)
     
-    # Current phase
-    phase = get_current_phase(info)
+    # Current phase (pass timezone for correct time)
+    phase = get_current_phase(info, location_timezone)
     
     # Difference from yesterday
     diff = model.get_diff()
@@ -277,7 +294,7 @@ def get_solar_data():
         "latitude": lat,
         "longitude": lon,
         "elevation": elev,
-        "timezone": TIMEZONE,
+        "timezone": location_timezone,
         "sunrise": info.sunrise.strftime("%H:%M") if info.sunrise else None,
         "sunset": info.sunset.strftime("%H:%M") if info.sunset else None,
         "sunrise_datetime": info.sunrise.isoformat() if info.sunrise else None,
