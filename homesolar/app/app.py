@@ -119,10 +119,37 @@ def get_language():
 # Cache for timezone lookups to avoid repeated API calls
 _timezone_cache = {}
 
+# Country code to timezone mapping (most common timezone per country)
+COUNTRY_TIMEZONES = {
+    'FR': 'Europe/Paris', 'DE': 'Europe/Berlin', 'IT': 'Europe/Rome', 'ES': 'Europe/Madrid',
+    'PT': 'Europe/Lisbon', 'GB': 'Europe/London', 'IE': 'Europe/Dublin', 'BE': 'Europe/Brussels',
+    'NL': 'Europe/Amsterdam', 'LU': 'Europe/Luxembourg', 'CH': 'Europe/Zurich', 'AT': 'Europe/Vienna',
+    'PL': 'Europe/Warsaw', 'CZ': 'Europe/Prague', 'SK': 'Europe/Bratislava', 'HU': 'Europe/Budapest',
+    'RO': 'Europe/Bucharest', 'BG': 'Europe/Sofia', 'GR': 'Europe/Athens', 'TR': 'Europe/Istanbul',
+    'RU': 'Europe/Moscow', 'UA': 'Europe/Kiev', 'BY': 'Europe/Minsk', 'FI': 'Europe/Helsinki',
+    'SE': 'Europe/Stockholm', 'NO': 'Europe/Oslo', 'DK': 'Europe/Copenhagen', 'IS': 'Atlantic/Reykjavik',
+    'US': 'America/New_York', 'CA': 'America/Toronto', 'MX': 'America/Mexico_City',
+    'BR': 'America/Sao_Paulo', 'AR': 'America/Buenos_Aires', 'CL': 'America/Santiago',
+    'CO': 'America/Bogota', 'PE': 'America/Lima', 'VE': 'America/Caracas',
+    'JP': 'Asia/Tokyo', 'KR': 'Asia/Seoul', 'CN': 'Asia/Shanghai', 'TW': 'Asia/Taipei',
+    'HK': 'Asia/Hong_Kong', 'SG': 'Asia/Singapore', 'MY': 'Asia/Kuala_Lumpur', 'TH': 'Asia/Bangkok',
+    'VN': 'Asia/Ho_Chi_Minh', 'PH': 'Asia/Manila', 'ID': 'Asia/Jakarta', 'IN': 'Asia/Kolkata',
+    'PK': 'Asia/Karachi', 'BD': 'Asia/Dhaka', 'LK': 'Asia/Colombo', 'NP': 'Asia/Kathmandu',
+    'AE': 'Asia/Dubai', 'SA': 'Asia/Riyadh', 'IL': 'Asia/Jerusalem', 'EG': 'Africa/Cairo',
+    'ZA': 'Africa/Johannesburg', 'NG': 'Africa/Lagos', 'KE': 'Africa/Nairobi', 'MA': 'Africa/Casablanca',
+    'AU': 'Australia/Sydney', 'NZ': 'Pacific/Auckland', 'FJ': 'Pacific/Fiji',
+    'MC': 'Europe/Monaco', 'AD': 'Europe/Andorra', 'SM': 'Europe/San_Marino', 'VA': 'Europe/Vatican',
+    'LI': 'Europe/Vaduz', 'MT': 'Europe/Malta', 'CY': 'Europe/Nicosia', 'EE': 'Europe/Tallinn',
+    'LV': 'Europe/Riga', 'LT': 'Europe/Vilnius', 'SI': 'Europe/Ljubljana', 'HR': 'Europe/Zagreb',
+    'BA': 'Europe/Sarajevo', 'RS': 'Europe/Belgrade', 'ME': 'Europe/Podgorica', 'MK': 'Europe/Skopje',
+    'AL': 'Europe/Tirane', 'XK': 'Europe/Belgrade', 'MD': 'Europe/Chisinau',
+}
+
 def get_timezone_for_coordinates(latitude: float, longitude: float) -> str:
     """
     Get timezone name from GPS coordinates.
-    Uses GeoNames API with fallback to longitude-based estimation.
+    Uses Nominatim reverse geocoding to get country, then maps to timezone.
+    Falls back to longitude-based estimation.
     
     NOTE: This function is only called when the user changes location via /api/config POST,
     not on every solar data request. The timezone is stored in config.json and loaded from there.
@@ -133,39 +160,73 @@ def get_timezone_for_coordinates(latitude: float, longitude: float) -> str:
     if cache_key in _timezone_cache:
         return _timezone_cache[cache_key]
     
-    # Try GeoNames API (free, no registration required for timezone)
+    # Try Nominatim reverse geocoding to get country code
     try:
-        url = f"http://api.geonames.org/timezoneJSON?lat={latitude}&lng={longitude}&username=demo"
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={latitude}&lon={longitude}&format=json"
         req = urllib.request.Request(url, headers={'User-Agent': 'HomeSolar/1.0'})
         
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode())
-            
-        if 'timezoneId' in data:
-            timezone_str = data['timezoneId']
+        
+        country_code = data.get('address', {}).get('country_code', '').upper()
+        
+        if country_code and country_code in COUNTRY_TIMEZONES:
+            timezone_str = COUNTRY_TIMEZONES[country_code]
             _timezone_cache[cache_key] = timezone_str
-            app.logger.info(f"Timezone for ({latitude}, {longitude}): {timezone_str}")
+            app.logger.info(f"Timezone for ({latitude}, {longitude}) via country {country_code}: {timezone_str}")
             return timezone_str
+        elif country_code:
+            app.logger.warning(f"Country {country_code} not in timezone mapping, using fallback")
     except Exception as e:
-        app.logger.warning(f"GeoNames API failed: {e}")
+        app.logger.warning(f"Nominatim reverse geocoding failed: {e}")
     
-    # Fallback: estimate timezone from longitude (UTC offset = longitude / 15)
+    # Fallback: estimate timezone from longitude
+    # Prefer real timezones with DST support over Etc/GMT (which are fixed offsets)
     try:
         utc_offset = round(longitude / 15)
-        # Find a timezone with this offset
-        for tz_name in pytz.common_timezones:
-            try:
-                tz = pytz.timezone(tz_name)
-                now = datetime.now(tz)
-                offset_hours = now.utcoffset().total_seconds() / 3600
-                if round(offset_hours) == utc_offset:
-                    _timezone_cache[cache_key] = tz_name
-                    app.logger.info(f"Estimated timezone for ({latitude}, {longitude}): {tz_name}")
-                    return tz_name
-            except:
-                continue
         
-        # Create Etc/GMT timezone
+        # First, try to find a real timezone with proper DST support
+        # These are the most common DST-aware timezones by UTC offset
+        dst_timezones = {
+            -11: ['Pacific/Pago_Pago'],
+            -10: ['Pacific/Honolulu'],
+            -9: ['America/Anchorage'],
+            -8: ['America/Los_Angeles'],
+            -7: ['America/Denver'],
+            -6: ['America/Chicago'],
+            -5: ['America/New_York'],
+            -4: ['America/Toronto'],
+            -3: ['America/Sao_Paulo'],
+            -2: ['Atlantic/South_Georgia'],
+            -1: ['Atlantic/Azores'],
+            0: ['Europe/London', 'UTC'],
+            1: ['Europe/Paris', 'Europe/Berlin'],
+            2: ['Europe/Athens', 'Europe/Helsinki'],
+            3: ['Europe/Moscow', 'Africa/Nairobi'],
+            4: ['Asia/Dubai'],
+            5: ['Asia/Karachi'],
+            6: ['Asia/Dhaka'],
+            7: ['Asia/Bangkok'],
+            8: ['Asia/Shanghai', 'Asia/Hong_Kong'],
+            9: ['Asia/Tokyo'],
+            10: ['Australia/Sydney'],
+            11: ['Pacific/Noumea'],
+            12: ['Pacific/Auckland']
+        }
+        
+        # Try to use a real timezone with DST support
+        if utc_offset in dst_timezones:
+            for tz_name in dst_timezones[utc_offset]:
+                try:
+                    pytz.timezone(tz_name)
+                    _timezone_cache[cache_key] = tz_name
+                    app.logger.info(f"Timezone for ({latitude}, {longitude}) via offset: {tz_name}")
+                    return tz_name
+                except:
+                    continue
+        
+        # Last resort: Etc/GMT (fixed offset, no DST)
+        app.logger.warning(f"Could not find DST-aware timezone for offset {utc_offset}, using fixed Etc/GMT")
         if utc_offset >= 0:
             tz_name = f"Etc/GMT-{utc_offset}" if utc_offset > 0 else "Etc/GMT"
         else:
