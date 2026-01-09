@@ -149,10 +149,52 @@ def get_timezone_for_coordinates(latitude: float, longitude: float) -> str:
     except Exception as e:
         app.logger.warning(f"GeoNames API failed: {e}")
     
-    # Fallback: estimate timezone from longitude (UTC offset = longitude / 15)
+    # Fallback: estimate timezone from longitude
+    # Prefer real timezones with DST support over Etc/GMT (which are fixed offsets)
     try:
         utc_offset = round(longitude / 15)
-        # Find a timezone with this offset
+        
+        # First, try to find a real timezone with proper DST support
+        # These are the most common DST-aware timezones by UTC offset
+        dst_timezones = {
+            -11: ['Etc/GMT+11'],
+            -10: ['Etc/GMT+10', 'Pacific/Honolulu'],
+            -9: ['Etc/GMT+9', 'America/Anchorage'],
+            -8: ['Etc/GMT+8', 'America/Los_Angeles', 'US/Pacific'],
+            -7: ['Etc/GMT+7', 'America/Denver', 'US/Mountain'],
+            -6: ['Etc/GMT+6', 'America/Chicago', 'US/Central'],
+            -5: ['Etc/GMT+5', 'America/New_York', 'US/Eastern'],
+            -4: ['America/Toronto', 'America/Buenos_Aires'],
+            -3: ['America/Sao_Paulo', 'America/Godthab'],
+            -2: ['Etc/GMT+2'],
+            -1: ['Atlantic/Azores', 'Atlantic/Cape_Verde'],
+            0: ['Europe/London', 'Africa/Lagos', 'UTC'],
+            1: ['Europe/Paris', 'Europe/Berlin', 'Europe/Amsterdam', 'Europe/Brussels'],
+            2: ['Europe/Cairo', 'Europe/Helsinki', 'Europe/Athens'],
+            3: ['Europe/Moscow', 'Africa/Nairobi'],
+            4: ['Asia/Dubai', 'Asia/Baku'],
+            5: ['Asia/Karachi', 'Asia/Tashkent'],
+            6: ['Asia/Almaty', 'Asia/Dhaka'],
+            7: ['Asia/Bangkok', 'Asia/Ho_Chi_Minh'],
+            8: ['Asia/Shanghai', 'Asia/Hong_Kong', 'Australia/Perth'],
+            9: ['Asia/Tokyo', 'Asia/Seoul'],
+            10: ['Australia/Sydney', 'Pacific/Guam'],
+            11: ['Australia/Lord_Howe', 'Pacific/Noumea'],
+            12: ['Pacific/Fiji', 'Pacific/Tongatapu']
+        }
+        
+        # Try to use a real timezone with DST support
+        if utc_offset in dst_timezones:
+            for tz_name in dst_timezones[utc_offset]:
+                try:
+                    tz = pytz.timezone(tz_name)
+                    _timezone_cache[cache_key] = tz_name
+                    app.logger.info(f"Timezone for ({latitude}, {longitude}): {tz_name}")
+                    return tz_name
+                except:
+                    continue
+        
+        # If no common timezone found, search all timezones
         for tz_name in pytz.common_timezones:
             try:
                 tz = pytz.timezone(tz_name)
@@ -165,7 +207,8 @@ def get_timezone_for_coordinates(latitude: float, longitude: float) -> str:
             except:
                 continue
         
-        # Create Etc/GMT timezone
+        # Last resort: Etc/GMT (fixed offset, no DST)
+        app.logger.warning(f"Could not find DST-aware timezone for offset {utc_offset}, using fixed Etc/GMT")
         if utc_offset >= 0:
             tz_name = f"Etc/GMT-{utc_offset}" if utc_offset > 0 else "Etc/GMT"
         else:
