@@ -348,11 +348,16 @@ def get_solar_data():
     diff = model.get_diff()
     diff_sign = model.get_sign()
     
+    # Get location name from config
+    config = load_config() or {}
+    location_name = config.get('location_name', '')
+    
     response = {
         "date": now_tz.strftime("%A %d %B %Y"),
         "latitude": lat,
         "longitude": lon,
         "elevation": elev,
+        "location_name": location_name,
         "timezone": location_timezone,
         "tz_offset": tz_offset,
         "sunrise": info.sunrise.strftime("%H:%M") if info.sunrise else None,

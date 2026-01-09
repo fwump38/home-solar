@@ -402,6 +402,19 @@
             grid-column: 1 / -1;
         }
         
+        /* Position details (under coordinates) */
+        .position-details {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-top: 4px;
+        }
+        
+        .position-detail {
+            font-size: 11px;
+            color: var(--ha-text-secondary);
+        }
+        
         #chart-container,
         #sunrise-chart-container {
             height: 300px;
@@ -1029,6 +1042,10 @@
                         <div class="stat-item">
                             <div class="stat-label">${t('position')}</div>
                             <div class="stat-value">${data.latitude.toFixed(2)}°, ${data.longitude.toFixed(2)}°</div>
+                            <div class="position-details">
+                                ${data.location_name ? `<div class="position-detail">${data.location_name}</div>` : ''}
+                                ${data.elevation ? `<div class="position-detail">${Math.round(data.elevation)} m</div>` : ''}
+                            </div>
                         </div>
                     </div>
                 </div>
