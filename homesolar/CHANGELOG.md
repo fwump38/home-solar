@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.7.3]
+
+### Fixed
+
+- **Longitude normalization**: Clicking on wrapped map no longer shows validation error; longitude values outside -180/180 are now automatically normalized
+
 ## [1.2.7]
 
 ### Fixed

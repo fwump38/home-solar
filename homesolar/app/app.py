@@ -441,8 +441,12 @@ def set_config():
         
         if not (-90 <= lat <= 90):
             return jsonify({"error": "Latitude must be between -90 and 90"}), 400
-        if not (-180 <= lon <= 180):
-            return jsonify({"error": "Longitude must be between -180 and 180"}), 400
+        
+        # Normalize longitude to -180 to 180 range (Leaflet can return values outside this range when map wraps)
+        while lon > 180:
+            lon -= 360
+        while lon < -180:
+            lon += 360
         
         # Get elevation: use manual value if provided, otherwise fetch from API (ONLY once here)
         if manual_elevation is not None:
