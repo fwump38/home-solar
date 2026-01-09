@@ -5,11 +5,11 @@ Complete solar ephemeris based on NOAA algorithm
 
 import os
 import json
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, render_template, jsonify, request
 import pytz
-from timezonefinder import TimezoneFinder
 
 from solar_calculator import (
     SolarCalculator, 
@@ -22,9 +22,6 @@ from event_service import event_service
 app = Flask(__name__, 
             template_folder='templates',
             static_folder='static')
-
-# Timezone finder instance (singleton for performance)
-tf = TimezoneFinder()
 
 # Configuration file path (persistent storage)
 CONFIG_FILE = Path(os.environ.get('CONFIG_PATH', '/share/homesolar/config.json'))
@@ -118,15 +115,63 @@ def get_language():
     return 'en'
 
 
+# Cache for timezone lookups to avoid repeated API calls
+_timezone_cache = {}
+
 def get_timezone_for_coordinates(latitude: float, longitude: float) -> str:
-    """Get timezone name from GPS coordinates using timezonefinder"""
+    """
+    Get timezone name from GPS coordinates.
+    Uses GeoNames API with fallback to longitude-based estimation.
+    """
+    # Round coordinates for caching (0.1 degree precision ~11km)
+    cache_key = (round(latitude, 1), round(longitude, 1))
+    
+    if cache_key in _timezone_cache:
+        return _timezone_cache[cache_key]
+    
+    # Try GeoNames API (free, no registration required for timezone)
     try:
-        timezone_str = tf.timezone_at(lat=latitude, lng=longitude)
-        if timezone_str:
+        url = f"http://api.geonames.org/timezoneJSON?lat={latitude}&lng={longitude}&username=demo"
+        req = urllib.request.Request(url, headers={'User-Agent': 'HomeSolar/1.0'})
+        
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            
+        if 'timezoneId' in data:
+            timezone_str = data['timezoneId']
+            _timezone_cache[cache_key] = timezone_str
+            app.logger.info(f"Timezone for ({latitude}, {longitude}): {timezone_str}")
             return timezone_str
     except Exception as e:
-        app.logger.warning(f"Could not determine timezone for ({latitude}, {longitude}): {e}")
-    # Fallback to configured timezone
+        app.logger.warning(f"GeoNames API failed: {e}")
+    
+    # Fallback: estimate timezone from longitude (UTC offset = longitude / 15)
+    try:
+        utc_offset = round(longitude / 15)
+        # Find a timezone with this offset
+        for tz_name in pytz.common_timezones:
+            try:
+                tz = pytz.timezone(tz_name)
+                now = datetime.now(tz)
+                offset_hours = now.utcoffset().total_seconds() / 3600
+                if round(offset_hours) == utc_offset:
+                    _timezone_cache[cache_key] = tz_name
+                    app.logger.info(f"Estimated timezone for ({latitude}, {longitude}): {tz_name}")
+                    return tz_name
+            except:
+                continue
+        
+        # Create Etc/GMT timezone
+        if utc_offset >= 0:
+            tz_name = f"Etc/GMT-{utc_offset}" if utc_offset > 0 else "Etc/GMT"
+        else:
+            tz_name = f"Etc/GMT+{abs(utc_offset)}"
+        _timezone_cache[cache_key] = tz_name
+        return tz_name
+    except Exception as e:
+        app.logger.warning(f"Timezone estimation failed: {e}")
+    
+    # Ultimate fallback: configured timezone
     return TIMEZONE
 
 
