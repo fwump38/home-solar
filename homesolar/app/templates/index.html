@@ -1508,6 +1508,10 @@
                 selectedLat = data.latitude;
                 selectedLon = data.longitude;
                 
+                // Update global solar data
+                currentSolarData = data;
+                lastUpdateTime = Date.now();
+                
                 renderContent(data);
                 await renderChart();
                 
@@ -1527,6 +1531,8 @@
                 setInterval(async () => {
                     const newData = await fetchSolarData();
                     if (newData) {
+                        currentSolarData = newData;
+                        lastUpdateTime = Date.now();
                         renderContent(newData);
                         await renderEvents();
                     }
@@ -1717,8 +1723,13 @@
                     // Refresh solar data with new location
                     const newData = await fetchSolarData();
                     if (newData) {
+                        currentSolarData = newData;
+                        lastUpdateTime = Date.now();
+                        selectedLat = newData.latitude;
+                        selectedLon = newData.longitude;
                         renderContent(newData);
                         await renderChart();
+                        await renderEvents();
                     }
                 } else {
                     showToast(result.error || t('locationError'), true);
