@@ -1,8 +1,18 @@
 # Changelog
 
-## [1.2.0] 
+## [1.2.1] 
+
+### Fixed
+
+- **GPS Time**: All time displays now use the configured timezone based on GPS coordinates instead of computer's local time
+- Frontend JavaScript now receives and uses server timezone for consistent time display
+- Progress bars and event scheduling now use GPS coordinate timezone
+- Added `current_time_iso` to API response for accurate timezone-aware time synchronization
+
+## [1.2.0]
 
 ### Added
+
 - **Elevation support**: Automatic elevation retrieval from Open-Elevation API (NASA SRTM data)
 - Horizon depression correction for more accurate sunrise/sunset times at altitude
 - New `/api/elevation` endpoint to query elevation for any coordinates

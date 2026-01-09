@@ -136,7 +136,8 @@ def format_duration(duration: timedelta) -> str:
 
 def get_current_phase(info: CompleteSolarInfo) -> dict:
     """Determine current solar phase"""
-    now = datetime.now()
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
     
     if info.is_polar_night:
         return {"phase": "polar_night", "icon": "🌑"}
@@ -179,7 +180,8 @@ def get_current_phase(info: CompleteSolarInfo) -> dict:
 
 def calculate_progress(info: CompleteSolarInfo) -> dict:
     """Calculate day or night progress"""
-    now = datetime.now()
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
     
     if not info.sunrise or not info.sunset:
         return {"progress": 0, "elapsed": "-", "remaining": "-", "is_day": False}
@@ -239,10 +241,13 @@ def get_solar_data():
     lon = request.args.get('lon', LONGITUDE, type=float)
     elev = request.args.get('elevation', ELEVATION, type=float)
     
+    #fix 1.2.1 timezone offset calculation
     tz_offset = get_timezone_offset(TIMEZONE)
+    tz = pytz.timezone(TIMEZONE)
+    now_tz = datetime.now(tz)
     
-    # Calculate solar information with elevation correction
-    model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev)
+    # Calculate solar information with elevation correction and timezone-aware date
+    model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev, current_date=now_tz)
     info = model.current_solar_info
     
     # Add location info for event service
@@ -264,7 +269,7 @@ def get_solar_data():
     diff_sign = model.get_sign()
     
     response = {
-        "date": datetime.now().strftime("%A %d %B %Y"),
+        "date": now_tz.strftime("%A %d %B %Y"),
         "latitude": lat,
         "longitude": lon,
         "elevation": elev,
@@ -288,7 +293,8 @@ def get_solar_data():
         "diff_positive": diff.total_seconds() >= 0,
         "progress": progress,
         "phase": phase,
-        "current_time": datetime.now().strftime("%H:%M:%S"),
+        "current_time": now_tz.strftime("%H:%M:%S"),
+        "current_time_iso": now_tz.isoformat(),
         "language": get_language()
     }
     

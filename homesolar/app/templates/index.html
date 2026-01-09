@@ -1055,8 +1055,12 @@
             // Store current solar data for real-time progress calculation
             currentSolarData = {
                 sunrise_time: new Date(data.sunrise_datetime),
-                sunset_time: new Date(data.sunset_datetime)
+                sunset_time: new Date(data.sunset_datetime),
+                current_time: data.current_time,
+                current_time_iso: data.current_time_iso,
+                timezone: data.timezone
             };
+            lastUpdateTime = Date.now();
         }
         
         let durationChart = null;
@@ -1259,19 +1263,24 @@
         
         function updateTime() {
             const timeElement = document.getElementById('live-time');
-            if (timeElement) {
-                const now = new Date();
+            if (timeElement && currentSolarData && currentSolarData.timezone) {
+                // Use GPS coordinates timezone from server
+                const serverTime = new Date(currentSolarData.current_time_iso);
+                const clientOffset = Date.now() - lastUpdateTime;
+                const now = new Date(serverTime.getTime() + clientOffset);
                 const locale = currentLanguage === 'fr' ? 'fr-FR' : 'en-US';
                 timeElement.textContent = now.toLocaleTimeString(locale, { 
                     hour: '2-digit', 
                     minute: '2-digit',
-                    second: '2-digit'
+                    second: '2-digit',
+                    timeZone: currentSolarData.timezone
                 });
             }
         }
         
         // Store current solar data for progress calculation
         let currentSolarData = null;
+        let lastUpdateTime = Date.now();
         
         function formatDuration(seconds) {
             const hours = Math.floor(seconds / 3600);
@@ -1281,9 +1290,11 @@
         }
         
         function updateProgressBar() {
-            if (!currentSolarData) return;
+            if (!currentSolarData || !currentSolarData.current_time_iso) return;
             
-            const now = new Date();
+            // Use GPS coordinates time from server
+            const serverTime = new Date(currentSolarData.current_time_iso);
+            const now = new Date(serverTime.getTime() + (Date.now() - lastUpdateTime));
             const sunrise = new Date(currentSolarData.sunrise_time);
             const sunset = new Date(currentSolarData.sunset_time);
             
@@ -1387,7 +1398,9 @@
                 return;
             }
             
-            const now = new Date();
+            // Use GPS coordinates time from server
+            const serverTime = currentSolarData && currentSolarData.current_time_iso ? new Date(currentSolarData.current_time_iso) : new Date();
+            const now = new Date(serverTime.getTime() + (Date.now() - lastUpdateTime));
             let nextEventFound = false;
             
             let html = eventsData.events.map(event => {
