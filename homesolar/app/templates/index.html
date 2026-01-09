@@ -701,6 +701,14 @@
                         <div class="coord-label" data-i18n="longitude">Longitude</div>
                         <div class="coord-value" id="lon-display">--</div>
                     </div>
+                    <div class="coord-field">
+                        <div class="coord-label" data-i18n="elevation">Elevation</div>
+                        <div class="coord-value" id="elev-display">--</div>
+                    </div>
+                    <div class="coord-field" style="grid-column: 1 / -1;">
+                        <div class="coord-label" data-i18n="locationName">Location</div>
+                        <div class="coord-value" id="location-display" style="font-size: 0.9em;">--</div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -766,6 +774,9 @@
                 mapHint: 'Click on the map to set your location',
                 latitude: 'Latitude',
                 longitude: 'Longitude',
+                elevation: 'Elevation',
+                locationName: 'Location',
+                unknownLocation: 'Unknown location',
                 cancel: 'Cancel',
                 saveLocation: 'Save Location',
                 locationSaved: 'Location saved successfully!',
@@ -829,6 +840,9 @@
                 mapHint: 'Cliquez sur la carte pour définir votre position',
                 latitude: 'Latitude',
                 longitude: 'Longitude',
+                elevation: 'Altitude',
+                locationName: 'Localisation',
+                unknownLocation: 'Lieu inconnu',
                 cancel: 'Annuler',
                 saveLocation: 'Enregistrer',
                 locationSaved: 'Position enregistrée avec succès !',
@@ -1501,7 +1515,27 @@
                 updateMarker(selectedLat, selectedLon);
             }
             
-            updateCoordsDisplay();
+            // Load current config to display elevation and location name
+            loadCurrentConfig();
+        }
+        
+        async function loadCurrentConfig() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/config`);
+                const config = await response.json();
+                
+                document.getElementById('lat-display').textContent = config.latitude.toFixed(6);
+                document.getElementById('lon-display').textContent = config.longitude.toFixed(6);
+                document.getElementById('elev-display').textContent = `${Math.round(config.elevation)} m`;
+                document.getElementById('location-display').textContent = config.location_name || t('unknownLocation');
+                
+                if (searchInput && config.location_name) {
+                    searchInput.value = config.location_name;
+                }
+            } catch (error) {
+                console.error('Error loading config:', error);
+                updateCoordsDisplay();
+            }
         }
         
         function closeSettings() {
@@ -1553,8 +1587,11 @@
         }
         
         function updateCoordsDisplay() {
+            // Just update lat/lon display, elevation and location will be fetched when saving
             document.getElementById('lat-display').textContent = selectedLat.toFixed(6);
             document.getElementById('lon-display').textContent = selectedLon.toFixed(6);
+            document.getElementById('elev-display').textContent = '...';
+            document.getElementById('location-display').textContent = '...';
         }
         
         // Search functionality
@@ -1612,6 +1649,10 @@
         
         async function saveLocation() {
             try {
+                // Show loading state
+                document.getElementById('elev-display').textContent = '...';
+                document.getElementById('location-display').textContent = '...';
+                
                 const response = await fetch(`${BASE_URL}/api/config`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1625,6 +1666,10 @@
                 const result = await response.json();
                 
                 if (result.success) {
+                    // Update display with server response (elevation, timezone, location_name)
+                    document.getElementById('elev-display').textContent = `${Math.round(result.elevation)} m`;
+                    document.getElementById('location-display').textContent = result.location_name || t('unknownLocation');
+                    
                     showToast(t('locationSaved'), false);
                     closeSettings();
                     

@@ -439,7 +439,7 @@ def set_config():
         if not (-180 <= lon <= 180):
             return jsonify({"error": "Longitude must be between -180 and 180"}), 400
         
-        # Get elevation: use manual value if provided, otherwise fetch from API
+        # Get elevation: use manual value if provided, otherwise fetch from API (ONLY once here)
         if manual_elevation is not None:
             elev = float(manual_elevation)
         else:
@@ -448,6 +448,24 @@ def set_config():
         # Get timezone for this location (ONLY called here when position changes)
         location_tz = get_timezone_for_coordinates(lat, lon)
         app.logger.info(f"Timezone for ({lat}, {lon}): {location_tz}")
+        
+        # Get location name via reverse geocoding if not provided (ONLY once here)
+        if not location_name:
+            try:
+                import urllib.request
+                import urllib.parse
+                url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
+                req = urllib.request.Request(url, headers={'User-Agent': 'HomeSolar/1.0'})
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    geo_data = json.loads(response.read().decode())
+                    address = geo_data.get('address', {})
+                    location_name = (address.get('city') or address.get('town') or 
+                                   address.get('village') or address.get('county') or
+                                   geo_data.get('display_name', '').split(',')[0])
+                    app.logger.info(f"Location name detected: {location_name}")
+            except Exception as e:
+                app.logger.warning(f"Could not get location name: {e}")
+                location_name = ""
         
         config = {
             "latitude": lat,
