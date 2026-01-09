@@ -402,17 +402,59 @@
             grid-column: 1 / -1;
         }
         
-        /* Position details (under coordinates) */
-        .position-details {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            margin-top: 4px;
+        /* Position tooltip */
+        .position-wrapper {
+            position: relative;
+            display: inline-block;
+            cursor: help;
         }
         
-        .position-detail {
+        .position-tooltip {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--ha-card-background);
+            color: var(--ha-text-color);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 12px;
             font-size: 11px;
-            color: var(--ha-text-secondary);
+            white-space: nowrap;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            pointer-events: none;
+        }
+        
+        .position-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid var(--ha-card-background);
+        }
+        
+        .position-wrapper:hover .position-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .position-detail-line {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .position-detail-line:not(:last-child) {
+            margin-bottom: 4px;
         }
         
         #chart-container,
@@ -1041,10 +1083,12 @@
                         </div>
                         <div class="stat-item">
                             <div class="stat-label">${t('position')}</div>
-                            <div class="stat-value">${data.latitude.toFixed(2)}°, ${data.longitude.toFixed(2)}°</div>
-                            <div class="position-details">
-                                ${data.location_name ? `<div class="position-detail">${data.location_name}</div>` : ''}
-                                ${data.elevation ? `<div class="position-detail">${Math.round(data.elevation)} m</div>` : ''}
+                            <div class="position-wrapper">
+                                <div class="stat-value">${data.latitude.toFixed(2)}°, ${data.longitude.toFixed(2)}°</div>
+                                <div class="position-tooltip">
+                                    ${data.location_name ? `<div class="position-detail-line">📍 ${data.location_name}</div>` : ''}
+                                    ${data.elevation ? `<div class="position-detail-line">📏 ${Math.round(data.elevation)} m</div>` : ''}
+                                </div>
                             </div>
                         </div>
                     </div>
