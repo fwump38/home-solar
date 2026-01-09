@@ -1704,7 +1704,7 @@
                     body: JSON.stringify({
                         latitude: selectedLat,
                         longitude: selectedLon,
-                        location_name: searchInput?.value || ''
+                        location_name: ''  // Always let backend fetch via Nominatim API
                     })
                 });
                 
