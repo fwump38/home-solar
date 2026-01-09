@@ -79,9 +79,10 @@ class CompleteSolarInfo:
         minutes = int((duration.total_seconds() % 3600) // 60)
         return f"{hours}h {minutes}min"
     
-    def is_night(self) -> bool:
+    def is_night(self, current_time: datetime = None) -> bool:
         """Est-ce actuellement la nuit ?"""
-        now = datetime.now()
+        if current_time is None:
+            current_time = datetime.now()
         
         if self.is_polar_night:
             return True
@@ -91,7 +92,7 @@ class CompleteSolarInfo:
         if not self.sunrise or not self.sunset:
             return False
         
-        return now < self.sunrise or now > self.sunset
+        return current_time < self.sunrise or current_time > self.sunset
 
 
 class SolarCalculator:
@@ -291,13 +292,20 @@ class CompleteSolarModel:
     et une projection sur une année complète.
     """
     
-    def __init__(self, latitude: float, longitude: float, timezone_offset: int = 0, elevation: float = 0.0):
+    def __init__(self, latitude: float, longitude: float, timezone_offset: int = 0, elevation: float = 0.0, current_date: datetime = None):
         self.latitude = latitude
         self.longitude = longitude
         self.timezone_offset = timezone_offset
         self.elevation = elevation
         
-        current_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        if current_date is None:
+            current_date = datetime.now()
+        
+        # Convert timezone-aware datetime to naive datetime for calculations
+        if current_date.tzinfo is not None:
+            current_date = current_date.replace(tzinfo=None)
+        
+        current_date = current_date.replace(hour=0, minute=0, second=0, microsecond=0)
         
         self.current_solar_info = SolarCalculator.get_complete_solar_info(
             current_date, latitude, longitude, elevation

@@ -1,8 +1,22 @@
 # Changelog
 
-## [1.2.0] 
+## [1.2.7.3]
+
+### Fixed
+
+- **Longitude normalization**: Clicking on wrapped map no longer shows validation error; longitude values outside -180/180 are now automatically normalized
+
+## [1.2.7]
+
+### Fixed
+
+- **GPS Timezone**: Solar times now use the timezone of the GPS coordinates, not the system timezone
+- Uses GeoNames API with fallback to longitude-based estimation (no compiled dependencies)
+
+## [1.2.0]
 
 ### Added
+
 - **Elevation support**: Automatic elevation retrieval from Open-Elevation API (NASA SRTM data)
 - Horizon depression correction for more accurate sunrise/sunset times at altitude
 - New `/api/elevation` endpoint to query elevation for any coordinates

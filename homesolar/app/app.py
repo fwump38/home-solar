@@ -5,6 +5,7 @@ Complete solar ephemeris based on NOAA algorithm
 
 import os
 import json
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, render_template, jsonify, request
@@ -83,19 +84,20 @@ def save_config(config):
 
 
 def get_location():
-    """Get current location and elevation (from config file or defaults)"""
+    """Get current location, elevation and timezone (from config file or defaults)"""
     config = load_config()
     if config:
         return (
             config.get('latitude', DEFAULT_LATITUDE),
             config.get('longitude', DEFAULT_LONGITUDE),
-            config.get('elevation', 0.0)
+            config.get('elevation', 0.0),
+            config.get('timezone', TIMEZONE)  # Use configured timezone or system default
         )
-    return DEFAULT_LATITUDE, DEFAULT_LONGITUDE, 0.0
+    return DEFAULT_LATITUDE, DEFAULT_LONGITUDE, 0.0, TIMEZONE
 
 
 # Current location (loaded at startup, can be updated via API)
-LATITUDE, LONGITUDE, ELEVATION = get_location()
+LATITUDE, LONGITUDE, ELEVATION, LOCATION_TIMEZONE = get_location()
 
 # Supported languages
 SUPPORTED_LANGUAGES = ['en', 'fr']
@@ -112,6 +114,69 @@ def get_language():
     
     # Default to English
     return 'en'
+
+
+# Cache for timezone lookups to avoid repeated API calls
+_timezone_cache = {}
+
+def get_timezone_for_coordinates(latitude: float, longitude: float) -> str:
+    """
+    Get timezone name from GPS coordinates.
+    Uses GeoNames API with fallback to longitude-based estimation.
+    
+    NOTE: This function is only called when the user changes location via /api/config POST,
+    not on every solar data request. The timezone is stored in config.json and loaded from there.
+    """
+    # Round coordinates for caching (0.1 degree precision ~11km)
+    cache_key = (round(latitude, 1), round(longitude, 1))
+    
+    if cache_key in _timezone_cache:
+        return _timezone_cache[cache_key]
+    
+    # Try GeoNames API (free, no registration required for timezone)
+    try:
+        url = f"http://api.geonames.org/timezoneJSON?lat={latitude}&lng={longitude}&username=demo"
+        req = urllib.request.Request(url, headers={'User-Agent': 'HomeSolar/1.0'})
+        
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            
+        if 'timezoneId' in data:
+            timezone_str = data['timezoneId']
+            _timezone_cache[cache_key] = timezone_str
+            app.logger.info(f"Timezone for ({latitude}, {longitude}): {timezone_str}")
+            return timezone_str
+    except Exception as e:
+        app.logger.warning(f"GeoNames API failed: {e}")
+    
+    # Fallback: estimate timezone from longitude (UTC offset = longitude / 15)
+    try:
+        utc_offset = round(longitude / 15)
+        # Find a timezone with this offset
+        for tz_name in pytz.common_timezones:
+            try:
+                tz = pytz.timezone(tz_name)
+                now = datetime.now(tz)
+                offset_hours = now.utcoffset().total_seconds() / 3600
+                if round(offset_hours) == utc_offset:
+                    _timezone_cache[cache_key] = tz_name
+                    app.logger.info(f"Estimated timezone for ({latitude}, {longitude}): {tz_name}")
+                    return tz_name
+            except:
+                continue
+        
+        # Create Etc/GMT timezone
+        if utc_offset >= 0:
+            tz_name = f"Etc/GMT-{utc_offset}" if utc_offset > 0 else "Etc/GMT"
+        else:
+            tz_name = f"Etc/GMT+{abs(utc_offset)}"
+        _timezone_cache[cache_key] = tz_name
+        return tz_name
+    except Exception as e:
+        app.logger.warning(f"Timezone estimation failed: {e}")
+    
+    # Ultimate fallback: configured timezone
+    return TIMEZONE
 
 
 def get_timezone_offset(timezone_str: str) -> int:
@@ -134,9 +199,22 @@ def format_duration(duration: timedelta) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
-def get_current_phase(info: CompleteSolarInfo) -> dict:
+def format_datetime_with_tz(dt: datetime, tz_offset: int) -> str:
+    """Format datetime with timezone offset for JavaScript compatibility"""
+    if dt is None:
+        return None
+    # Format: 2026-01-09T06:51:00+09:00
+    sign = '+' if tz_offset >= 0 else '-'
+    offset_str = f"{sign}{abs(tz_offset):02d}:00"
+    return dt.strftime("%Y-%m-%dT%H:%M:%S") + offset_str
+
+
+def get_current_phase(info: CompleteSolarInfo, timezone_str: str = None) -> dict:
     """Determine current solar phase"""
-    now = datetime.now()
+    tz = pytz.timezone(timezone_str or TIMEZONE)
+    now = datetime.now(tz)
+    # Convert to naive datetime for comparison with solar calculation results
+    now = now.replace(tzinfo=None)
     
     if info.is_polar_night:
         return {"phase": "polar_night", "icon": "🌑"}
@@ -177,9 +255,12 @@ def get_current_phase(info: CompleteSolarInfo) -> dict:
     return {"phase": "night", "icon": "🌙"}
 
 
-def calculate_progress(info: CompleteSolarInfo) -> dict:
+def calculate_progress(info: CompleteSolarInfo, timezone_str: str = None) -> dict:
     """Calculate day or night progress"""
-    now = datetime.now()
+    tz = pytz.timezone(timezone_str or TIMEZONE)
+    now = datetime.now(tz)
+    # Convert to naive datetime for comparison with solar calculation results
+    now = now.replace(tzinfo=None)
     
     if not info.sunrise or not info.sunset:
         return {"progress": 0, "elapsed": "-", "remaining": "-", "is_day": False}
@@ -239,10 +320,14 @@ def get_solar_data():
     lon = request.args.get('lon', LONGITUDE, type=float)
     elev = request.args.get('elevation', ELEVATION, type=float)
     
-    tz_offset = get_timezone_offset(TIMEZONE)
+    # Use timezone from config (set when position changes, not called every time)
+    location_timezone = LOCATION_TIMEZONE
+    tz_offset = get_timezone_offset(location_timezone)
+    tz = pytz.timezone(location_timezone)
+    now_tz = datetime.now(tz)
     
-    # Calculate solar information with elevation correction
-    model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev)
+    # Calculate solar information with elevation correction and timezone-aware date
+    model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev, current_date=now_tz)
     info = model.current_solar_info
     
     # Add location info for event service
@@ -250,29 +335,35 @@ def get_solar_data():
     info.longitude = lon
     info.elevation = elev
     
-    # Schedule events for Home Assistant
-    event_service.schedule_events(info)
+    # Schedule events for Home Assistant (pass timezone for correct time comparisons)
+    event_service.schedule_events(info, location_timezone)
     
-    # Calculate progress
-    progress = calculate_progress(info)
+    # Calculate progress (pass timezone for correct time)
+    progress = calculate_progress(info, location_timezone)
     
-    # Current phase
-    phase = get_current_phase(info)
+    # Current phase (pass timezone for correct time)
+    phase = get_current_phase(info, location_timezone)
     
     # Difference from yesterday
     diff = model.get_diff()
     diff_sign = model.get_sign()
     
+    # Get location name from config
+    config = load_config() or {}
+    location_name = config.get('location_name', '')
+    
     response = {
-        "date": datetime.now().strftime("%A %d %B %Y"),
+        "date": now_tz.strftime("%A %d %B %Y"),
         "latitude": lat,
         "longitude": lon,
         "elevation": elev,
-        "timezone": TIMEZONE,
+        "location_name": location_name,
+        "timezone": location_timezone,
+        "tz_offset": tz_offset,
         "sunrise": info.sunrise.strftime("%H:%M") if info.sunrise else None,
         "sunset": info.sunset.strftime("%H:%M") if info.sunset else None,
-        "sunrise_datetime": info.sunrise.isoformat() if info.sunrise else None,
-        "sunset_datetime": info.sunset.isoformat() if info.sunset else None,
+        "sunrise_datetime": format_datetime_with_tz(info.sunrise, tz_offset),
+        "sunset_datetime": format_datetime_with_tz(info.sunset, tz_offset),
         "solar_noon": info.solar_noon.strftime("%H:%M") if info.solar_noon else None,
         "civil_dawn": info.civil_dawn.strftime("%H:%M") if info.civil_dawn else None,
         "civil_dusk": info.civil_dusk.strftime("%H:%M") if info.civil_dusk else None,
@@ -288,7 +379,8 @@ def get_solar_data():
         "diff_positive": diff.total_seconds() >= 0,
         "progress": progress,
         "phase": phase,
-        "current_time": datetime.now().strftime("%H:%M:%S"),
+        "current_time": now_tz.strftime("%H:%M:%S"),
+        "current_time_iso": now_tz.isoformat(),
         "language": get_language()
     }
     
@@ -302,7 +394,9 @@ def get_chart_data():
     lon = request.args.get('lon', LONGITUDE, type=float)
     elev = request.args.get('elevation', ELEVATION, type=float)
     
-    tz_offset = get_timezone_offset(TIMEZONE)
+    # Use timezone from config (set when position changes)
+    location_timezone = LOCATION_TIMEZONE
+    tz_offset = get_timezone_offset(location_timezone)
     model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev)
     
     return jsonify(model.get_chart_data())
@@ -311,13 +405,13 @@ def get_chart_data():
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Get current location configuration"""
-    lat, lon, elev = get_location()
+    lat, lon, elev, tz = get_location()
     config = load_config() or {}
     return jsonify({
         "latitude": lat,
         "longitude": lon,
         "elevation": elev,
-        "timezone": TIMEZONE,
+        "timezone": tz,
         "location_name": config.get('location_name', ''),
         "is_configured": CONFIG_FILE.exists()
     })
@@ -326,7 +420,7 @@ def get_config():
 @app.route('/api/config', methods=['POST'])
 def set_config():
     """Save location configuration from map selection"""
-    global LATITUDE, LONGITUDE, ELEVATION
+    global LATITUDE, LONGITUDE, ELEVATION, LOCATION_TIMEZONE
     
     data = request.get_json()
     if not data:
@@ -347,19 +441,46 @@ def set_config():
         
         if not (-90 <= lat <= 90):
             return jsonify({"error": "Latitude must be between -90 and 90"}), 400
-        if not (-180 <= lon <= 180):
-            return jsonify({"error": "Longitude must be between -180 and 180"}), 400
         
-        # Get elevation: use manual value if provided, otherwise fetch from API
+        # Normalize longitude to -180 to 180 range (Leaflet can return values outside this range when map wraps)
+        while lon > 180:
+            lon -= 360
+        while lon < -180:
+            lon += 360
+        
+        # Get elevation: use manual value if provided, otherwise fetch from API (ONLY once here)
         if manual_elevation is not None:
             elev = float(manual_elevation)
         else:
             elev = get_elevation(lat, lon)
         
+        # Get timezone for this location (ONLY called here when position changes)
+        location_tz = get_timezone_for_coordinates(lat, lon)
+        app.logger.info(f"Timezone for ({lat}, {lon}): {location_tz}")
+        
+        # Get location name via reverse geocoding if not provided or empty (ONLY once here)
+        if not location_name or location_name.strip() == "":
+            try:
+                import urllib.request
+                import urllib.parse
+                url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
+                req = urllib.request.Request(url, headers={'User-Agent': 'HomeSolar/1.0'})
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    geo_data = json.loads(response.read().decode())
+                    address = geo_data.get('address', {})
+                    location_name = (address.get('city') or address.get('town') or 
+                                   address.get('village') or address.get('county') or
+                                   geo_data.get('display_name', '').split(',')[0])
+                    app.logger.info(f"Location name detected: {location_name}")
+            except Exception as e:
+                app.logger.warning(f"Could not get location name: {e}")
+                location_name = ""
+        
         config = {
             "latitude": lat,
             "longitude": lon,
             "elevation": elev,
+            "timezone": location_tz,
             "location_name": location_name,
             "updated_at": datetime.now().isoformat()
         }
@@ -369,11 +490,13 @@ def set_config():
             LATITUDE = lat
             LONGITUDE = lon
             ELEVATION = elev
+            LOCATION_TIMEZONE = location_tz
             return jsonify({
                 "success": True,
                 "latitude": lat,
                 "longitude": lon,
                 "elevation": elev,
+                "timezone": location_tz,
                 "location_name": location_name
             })
         else:
@@ -479,14 +602,14 @@ def initialize_app():
     event_service.start()
     
     # Load initial solar data to schedule events
-    lat, lon, elev = get_location()
+    lat, lon, elev, location_tz = get_location()
     tz_offset = get_timezone_offset(TIMEZONE)
     model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev)
     info = model.current_solar_info
     info.latitude = lat
     info.longitude = lon
     info.elevation = elev
-    event_service.schedule_events(info)
+    event_service.schedule_events(info, location_tz)
     
     app.logger.info(f"HomeSolar initialized at ({lat}, {lon}, {elev}m) - Events service running: {event_service.ha_available}")
 

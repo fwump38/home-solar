@@ -402,6 +402,61 @@
             grid-column: 1 / -1;
         }
         
+        /* Position tooltip */
+        .position-wrapper {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+        }
+        
+        .position-tooltip {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--ha-card-background);
+            color: var(--ha-text-color);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 11px;
+            white-space: nowrap;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            pointer-events: none;
+        }
+        
+        .position-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid var(--ha-card-background);
+        }
+        
+        .position-wrapper:hover .position-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .position-detail-line {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .position-detail-line:not(:last-child) {
+            margin-bottom: 4px;
+        }
+        
         #chart-container,
         #sunrise-chart-container {
             height: 300px;
@@ -766,6 +821,9 @@
                 mapHint: 'Click on the map to set your location',
                 latitude: 'Latitude',
                 longitude: 'Longitude',
+                elevation: 'Elevation',
+                locationName: 'Location',
+                unknownLocation: 'Unknown location',
                 cancel: 'Cancel',
                 saveLocation: 'Save Location',
                 locationSaved: 'Location saved successfully!',
@@ -829,6 +887,9 @@
                 mapHint: 'Cliquez sur la carte pour définir votre position',
                 latitude: 'Latitude',
                 longitude: 'Longitude',
+                elevation: 'Altitude',
+                locationName: 'Localisation',
+                unknownLocation: 'Lieu inconnu',
                 cancel: 'Annuler',
                 saveLocation: 'Enregistrer',
                 locationSaved: 'Position enregistrée avec succès !',
@@ -1014,7 +1075,13 @@
                         </div>
                         <div class="stat-item">
                             <div class="stat-label">${t('position')}</div>
-                            <div class="stat-value">${data.latitude.toFixed(2)}°, ${data.longitude.toFixed(2)}°</div>
+                            <div class="position-wrapper">
+                                <div class="stat-value">${data.latitude.toFixed(2)}°, ${data.longitude.toFixed(2)}°</div>
+                                <div class="position-tooltip">
+                                    ${data.location_name ? `<div class="position-detail-line">📍 ${data.location_name}</div>` : ''}
+                                    ${data.elevation ? `<div class="position-detail-line">📏 ${Math.round(data.elevation)} m</div>` : ''}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1053,10 +1120,16 @@
             document.getElementById('current-date').textContent = data.date;
             
             // Store current solar data for real-time progress calculation
+            // sunrise_datetime and sunset_datetime now include timezone offset (e.g., +09:00 for Tokyo)
             currentSolarData = {
                 sunrise_time: new Date(data.sunrise_datetime),
-                sunset_time: new Date(data.sunset_datetime)
+                sunset_time: new Date(data.sunset_datetime),
+                current_time: data.current_time,
+                current_time_iso: data.current_time_iso,
+                timezone: data.timezone,
+                tz_offset: data.tz_offset
             };
+            lastUpdateTime = Date.now();
         }
         
         let durationChart = null;
@@ -1259,19 +1332,24 @@
         
         function updateTime() {
             const timeElement = document.getElementById('live-time');
-            if (timeElement) {
-                const now = new Date();
+            if (timeElement && currentSolarData && currentSolarData.timezone) {
+                // Use GPS coordinates timezone from server
+                const serverTime = new Date(currentSolarData.current_time_iso);
+                const clientOffset = Date.now() - lastUpdateTime;
+                const now = new Date(serverTime.getTime() + clientOffset);
                 const locale = currentLanguage === 'fr' ? 'fr-FR' : 'en-US';
                 timeElement.textContent = now.toLocaleTimeString(locale, { 
                     hour: '2-digit', 
                     minute: '2-digit',
-                    second: '2-digit'
+                    second: '2-digit',
+                    timeZone: currentSolarData.timezone
                 });
             }
         }
         
         // Store current solar data for progress calculation
         let currentSolarData = null;
+        let lastUpdateTime = Date.now();
         
         function formatDuration(seconds) {
             const hours = Math.floor(seconds / 3600);
@@ -1281,14 +1359,19 @@
         }
         
         function updateProgressBar() {
-            if (!currentSolarData) return;
+            if (!currentSolarData || !currentSolarData.current_time_iso) return;
             
-            const now = new Date();
-            const sunrise = new Date(currentSolarData.sunrise_time);
-            const sunset = new Date(currentSolarData.sunset_time);
+            // Use GPS coordinates time from server (includes timezone offset)
+            const serverTime = new Date(currentSolarData.current_time_iso);
+            const clientOffset = Date.now() - lastUpdateTime;
+            const now = new Date(serverTime.getTime() + clientOffset);
+            
+            // sunrise_time and sunset_time are already Date objects with correct timezone
+            const sunrise = currentSolarData.sunrise_time;
+            const sunset = currentSolarData.sunset_time;
             
             // Check if we can calculate progress
-            if (!sunrise || !sunset || isNaN(sunrise) || isNaN(sunset)) return;
+            if (!sunrise || !sunset || isNaN(sunrise.getTime()) || isNaN(sunset.getTime())) return;
             
             let isDay = now >= sunrise && now <= sunset;
             let progress = 0, elapsedSeconds = 0, remainingSeconds = 0;
@@ -1387,7 +1470,9 @@
                 return;
             }
             
-            const now = new Date();
+            // Use GPS coordinates time from server
+            const serverTime = currentSolarData && currentSolarData.current_time_iso ? new Date(currentSolarData.current_time_iso) : new Date();
+            const now = new Date(serverTime.getTime() + (Date.now() - lastUpdateTime));
             let nextEventFound = false;
             
             let html = eventsData.events.map(event => {
@@ -1423,6 +1508,10 @@
                 selectedLat = data.latitude;
                 selectedLon = data.longitude;
                 
+                // Update global solar data
+                currentSolarData = data;
+                lastUpdateTime = Date.now();
+                
                 renderContent(data);
                 await renderChart();
                 
@@ -1442,6 +1531,8 @@
                 setInterval(async () => {
                     const newData = await fetchSolarData();
                     if (newData) {
+                        currentSolarData = newData;
+                        lastUpdateTime = Date.now();
                         renderContent(newData);
                         await renderEvents();
                     }
@@ -1483,7 +1574,25 @@
                 updateMarker(selectedLat, selectedLon);
             }
             
-            updateCoordsDisplay();
+            // Load current config to display elevation and location name
+            loadCurrentConfig();
+        }
+        
+        async function loadCurrentConfig() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/config`);
+                const config = await response.json();
+                
+                document.getElementById('lat-display').textContent = config.latitude.toFixed(6);
+                document.getElementById('lon-display').textContent = config.longitude.toFixed(6);
+                
+                if (searchInput && config.location_name) {
+                    searchInput.value = config.location_name;
+                }
+            } catch (error) {
+                console.error('Error loading config:', error);
+                updateCoordsDisplay();
+            }
         }
         
         function closeSettings() {
@@ -1535,6 +1644,7 @@
         }
         
         function updateCoordsDisplay() {
+            // Just update lat/lon display
             document.getElementById('lat-display').textContent = selectedLat.toFixed(6);
             document.getElementById('lon-display').textContent = selectedLon.toFixed(6);
         }
@@ -1600,7 +1710,7 @@
                     body: JSON.stringify({
                         latitude: selectedLat,
                         longitude: selectedLon,
-                        location_name: searchInput?.value || ''
+                        location_name: ''  // Always let backend fetch via Nominatim API
                     })
                 });
                 
@@ -1613,8 +1723,13 @@
                     // Refresh solar data with new location
                     const newData = await fetchSolarData();
                     if (newData) {
+                        currentSolarData = newData;
+                        lastUpdateTime = Date.now();
+                        selectedLat = newData.latitude;
+                        selectedLon = newData.longitude;
                         renderContent(newData);
                         await renderChart();
+                        await renderEvents();
                     }
                 } else {
                     showToast(result.error || t('locationError'), true);
