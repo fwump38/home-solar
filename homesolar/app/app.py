@@ -84,19 +84,20 @@ def save_config(config):
 
 
 def get_location():
-    """Get current location and elevation (from config file or defaults)"""
+    """Get current location, elevation and timezone (from config file or defaults)"""
     config = load_config()
     if config:
         return (
             config.get('latitude', DEFAULT_LATITUDE),
             config.get('longitude', DEFAULT_LONGITUDE),
-            config.get('elevation', 0.0)
+            config.get('elevation', 0.0),
+            config.get('timezone', TIMEZONE)  # Use configured timezone or system default
         )
-    return DEFAULT_LATITUDE, DEFAULT_LONGITUDE, 0.0
+    return DEFAULT_LATITUDE, DEFAULT_LONGITUDE, 0.0, TIMEZONE
 
 
 # Current location (loaded at startup, can be updated via API)
-LATITUDE, LONGITUDE, ELEVATION = get_location()
+LATITUDE, LONGITUDE, ELEVATION, LOCATION_TIMEZONE = get_location()
 
 # Supported languages
 SUPPORTED_LANGUAGES = ['en', 'fr']
@@ -122,6 +123,9 @@ def get_timezone_for_coordinates(latitude: float, longitude: float) -> str:
     """
     Get timezone name from GPS coordinates.
     Uses GeoNames API with fallback to longitude-based estimation.
+    
+    NOTE: This function is only called when the user changes location via /api/config POST,
+    not on every solar data request. The timezone is stored in config.json and loaded from there.
     """
     # Round coordinates for caching (0.1 degree precision ~11km)
     cache_key = (round(latitude, 1), round(longitude, 1))
@@ -193,6 +197,16 @@ def format_duration(duration: timedelta) -> str:
     minutes = (total_seconds % 3600) // 60
     seconds = total_seconds % 60
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def format_datetime_with_tz(dt: datetime, tz_offset: int) -> str:
+    """Format datetime with timezone offset for JavaScript compatibility"""
+    if dt is None:
+        return None
+    # Format: 2026-01-09T06:51:00+09:00
+    sign = '+' if tz_offset >= 0 else '-'
+    offset_str = f"{sign}{abs(tz_offset):02d}:00"
+    return dt.strftime("%Y-%m-%dT%H:%M:%S") + offset_str
 
 
 def get_current_phase(info: CompleteSolarInfo, timezone_str: str = None) -> dict:
@@ -306,8 +320,8 @@ def get_solar_data():
     lon = request.args.get('lon', LONGITUDE, type=float)
     elev = request.args.get('elevation', ELEVATION, type=float)
     
-    # Get timezone from GPS coordinates (not from system config)
-    location_timezone = get_timezone_for_coordinates(lat, lon)
+    # Use timezone from config (set when position changes, not called every time)
+    location_timezone = LOCATION_TIMEZONE
     tz_offset = get_timezone_offset(location_timezone)
     tz = pytz.timezone(location_timezone)
     now_tz = datetime.now(tz)
@@ -321,8 +335,8 @@ def get_solar_data():
     info.longitude = lon
     info.elevation = elev
     
-    # Schedule events for Home Assistant
-    event_service.schedule_events(info)
+    # Schedule events for Home Assistant (pass timezone for correct time comparisons)
+    event_service.schedule_events(info, location_timezone)
     
     # Calculate progress (pass timezone for correct time)
     progress = calculate_progress(info, location_timezone)
@@ -340,10 +354,11 @@ def get_solar_data():
         "longitude": lon,
         "elevation": elev,
         "timezone": location_timezone,
+        "tz_offset": tz_offset,
         "sunrise": info.sunrise.strftime("%H:%M") if info.sunrise else None,
         "sunset": info.sunset.strftime("%H:%M") if info.sunset else None,
-        "sunrise_datetime": info.sunrise.isoformat() if info.sunrise else None,
-        "sunset_datetime": info.sunset.isoformat() if info.sunset else None,
+        "sunrise_datetime": format_datetime_with_tz(info.sunrise, tz_offset),
+        "sunset_datetime": format_datetime_with_tz(info.sunset, tz_offset),
         "solar_noon": info.solar_noon.strftime("%H:%M") if info.solar_noon else None,
         "civil_dawn": info.civil_dawn.strftime("%H:%M") if info.civil_dawn else None,
         "civil_dusk": info.civil_dusk.strftime("%H:%M") if info.civil_dusk else None,
@@ -374,7 +389,9 @@ def get_chart_data():
     lon = request.args.get('lon', LONGITUDE, type=float)
     elev = request.args.get('elevation', ELEVATION, type=float)
     
-    tz_offset = get_timezone_offset(TIMEZONE)
+    # Use timezone from config (set when position changes)
+    location_timezone = LOCATION_TIMEZONE
+    tz_offset = get_timezone_offset(location_timezone)
     model = CompleteSolarModel(lat, lon, tz_offset, elevation=elev)
     
     return jsonify(model.get_chart_data())
@@ -383,13 +400,13 @@ def get_chart_data():
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Get current location configuration"""
-    lat, lon, elev = get_location()
+    lat, lon, elev, tz = get_location()
     config = load_config() or {}
     return jsonify({
         "latitude": lat,
         "longitude": lon,
         "elevation": elev,
-        "timezone": TIMEZONE,
+        "timezone": tz,
         "location_name": config.get('location_name', ''),
         "is_configured": CONFIG_FILE.exists()
     })
@@ -398,7 +415,7 @@ def get_config():
 @app.route('/api/config', methods=['POST'])
 def set_config():
     """Save location configuration from map selection"""
-    global LATITUDE, LONGITUDE, ELEVATION
+    global LATITUDE, LONGITUDE, ELEVATION, LOCATION_TIMEZONE
     
     data = request.get_json()
     if not data:
@@ -428,10 +445,15 @@ def set_config():
         else:
             elev = get_elevation(lat, lon)
         
+        # Get timezone for this location (ONLY called here when position changes)
+        location_tz = get_timezone_for_coordinates(lat, lon)
+        app.logger.info(f"Timezone for ({lat}, {lon}): {location_tz}")
+        
         config = {
             "latitude": lat,
             "longitude": lon,
             "elevation": elev,
+            "timezone": location_tz,
             "location_name": location_name,
             "updated_at": datetime.now().isoformat()
         }
@@ -441,11 +463,13 @@ def set_config():
             LATITUDE = lat
             LONGITUDE = lon
             ELEVATION = elev
+            LOCATION_TIMEZONE = location_tz
             return jsonify({
                 "success": True,
                 "latitude": lat,
                 "longitude": lon,
                 "elevation": elev,
+                "timezone": location_tz,
                 "location_name": location_name
             })
         else:

@@ -1,18 +1,11 @@
 # Changelog
 
-## [1.2.4]
+## [1.2.5]
 
 ### Fixed
 
 - **GPS Timezone**: Solar times now use the timezone of the GPS coordinates, not the system timezone
 - Uses GeoNames API with fallback to longitude-based estimation (no compiled dependencies)
-- Removed `timezonefinder` dependency that failed to build on Alpine Linux (h3 compilation issue)
-- Added timezone caching for better performance
-
-### Changed
-
-- `get_timezone_for_coordinates()` now uses GeoNames API instead of timezonefinder library
-- Fallback to estimated timezone based on longitude if API fails
 
 ## [1.2.0]
 

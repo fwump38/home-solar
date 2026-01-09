@@ -1053,12 +1053,14 @@
             document.getElementById('current-date').textContent = data.date;
             
             // Store current solar data for real-time progress calculation
+            // sunrise_datetime and sunset_datetime now include timezone offset (e.g., +09:00 for Tokyo)
             currentSolarData = {
                 sunrise_time: new Date(data.sunrise_datetime),
                 sunset_time: new Date(data.sunset_datetime),
                 current_time: data.current_time,
                 current_time_iso: data.current_time_iso,
-                timezone: data.timezone
+                timezone: data.timezone,
+                tz_offset: data.tz_offset
             };
             lastUpdateTime = Date.now();
         }
@@ -1292,14 +1294,17 @@
         function updateProgressBar() {
             if (!currentSolarData || !currentSolarData.current_time_iso) return;
             
-            // Use GPS coordinates time from server
+            // Use GPS coordinates time from server (includes timezone offset)
             const serverTime = new Date(currentSolarData.current_time_iso);
-            const now = new Date(serverTime.getTime() + (Date.now() - lastUpdateTime));
-            const sunrise = new Date(currentSolarData.sunrise_time);
-            const sunset = new Date(currentSolarData.sunset_time);
+            const clientOffset = Date.now() - lastUpdateTime;
+            const now = new Date(serverTime.getTime() + clientOffset);
+            
+            // sunrise_time and sunset_time are already Date objects with correct timezone
+            const sunrise = currentSolarData.sunrise_time;
+            const sunset = currentSolarData.sunset_time;
             
             // Check if we can calculate progress
-            if (!sunrise || !sunset || isNaN(sunrise) || isNaN(sunset)) return;
+            if (!sunrise || !sunset || isNaN(sunrise.getTime()) || isNaN(sunset.getTime())) return;
             
             let isDay = now >= sunrise && now <= sunset;
             let progress = 0, elapsedSeconds = 0, remainingSeconds = 0;

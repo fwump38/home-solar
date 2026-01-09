@@ -9,6 +9,7 @@ import threading
 import time
 import logging
 import requests
+import pytz
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
@@ -55,6 +56,7 @@ class HomeAssistantEventService:
         self.scheduled_events: Dict[SolarPhase, ScheduledEvent] = {}
         self.last_update_date: Optional[datetime] = None
         self._solar_info = None
+        self.timezone_str: str = "UTC"  # Will be updated when schedule_events is called
         
         # Check if we're running in Home Assistant
         self.ha_available = bool(self.supervisor_token)
@@ -67,6 +69,11 @@ class HomeAssistantEventService:
             "Authorization": f"Bearer {self.supervisor_token}",
             "Content-Type": "application/json"
         }
+    
+    def _get_now(self) -> datetime:
+        """Get current time in the configured timezone (naive datetime for comparison)"""
+        tz = pytz.timezone(self.timezone_str)
+        return datetime.now(tz).replace(tzinfo=None)
     
     def fire_event(self, phase: SolarPhase, event_data: dict = None) -> bool:
         """
@@ -85,7 +92,7 @@ class HomeAssistantEventService:
         try:
             data = {
                 "phase": phase.value,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": self._get_now().isoformat(),
                 **(event_data or {})
             }
             
@@ -159,13 +166,18 @@ class HomeAssistantEventService:
         }
         return icons.get(sensor_name, "mdi:sun-wireless")
     
-    def schedule_events(self, solar_info) -> None:
+    def schedule_events(self, solar_info, timezone_str: str = "UTC") -> None:
         """
         Schedule events for all solar phases based on calculated times.
         Called when solar data is updated.
+        
+        Args:
+            solar_info: Solar information with times
+            timezone_str: Timezone string for the GPS location (e.g., "Asia/Tokyo")
         """
         self._solar_info = solar_info
-        today = datetime.now().date()
+        self.timezone_str = timezone_str  # Update timezone for _get_now()
+        today = self._get_now().date()
         
         # Clear old events if day changed
         if self.last_update_date != today:
@@ -185,7 +197,7 @@ class HomeAssistantEventService:
             (SolarPhase.ASTRONOMICAL_DUSK, solar_info.astronomical_dusk),
         ]
         
-        now = datetime.now()
+        now = self._get_now()
         
         for phase, event_time in phase_times:
             if event_time:
@@ -268,12 +280,12 @@ class HomeAssistantEventService:
             self.update_sensor("next_event", next_event.phase.value, {
                 "time": next_event.time.strftime("%H:%M"),
                 "timestamp": next_event.time.isoformat(),
-                "minutes_until": int((next_event.time - datetime.now()).total_seconds() / 60)
+                "minutes_until": int((next_event.time - self._get_now()).total_seconds() / 60)
             })
     
     def _get_current_phase(self, solar_info) -> str:
         """Determine current solar phase"""
-        now = datetime.now()
+        now = self._get_now()
         
         if solar_info.is_polar_night:
             return "Polar Night"
@@ -312,7 +324,7 @@ class HomeAssistantEventService:
     
     def _get_next_event(self) -> Optional[ScheduledEvent]:
         """Get the next unfired event"""
-        now = datetime.now()
+        now = self._get_now()
         next_event = None
         
         for event in self.scheduled_events.values():
@@ -324,7 +336,7 @@ class HomeAssistantEventService:
     
     def check_and_fire_events(self) -> None:
         """Check if any scheduled events should be fired"""
-        now = datetime.now()
+        now = self._get_now()
         
         for phase, event in self.scheduled_events.items():
             if not event.fired and event.time <= now:
