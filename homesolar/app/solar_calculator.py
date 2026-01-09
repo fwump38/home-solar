@@ -300,6 +300,11 @@ class CompleteSolarModel:
         
         if current_date is None:
             current_date = datetime.now()
+        
+        # Convert timezone-aware datetime to naive datetime for calculations
+        if current_date.tzinfo is not None:
+            current_date = current_date.replace(tzinfo=None)
+        
         current_date = current_date.replace(hour=0, minute=0, second=0, microsecond=0)
         
         self.current_solar_info = SolarCalculator.get_complete_solar_info(

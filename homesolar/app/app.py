@@ -138,6 +138,8 @@ def get_current_phase(info: CompleteSolarInfo) -> dict:
     """Determine current solar phase"""
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
+    # Convert to naive datetime for comparison with solar calculation results
+    now = now.replace(tzinfo=None)
     
     if info.is_polar_night:
         return {"phase": "polar_night", "icon": "🌑"}
@@ -182,6 +184,8 @@ def calculate_progress(info: CompleteSolarInfo) -> dict:
     """Calculate day or night progress"""
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
+    # Convert to naive datetime for comparison with solar calculation results
+    now = now.replace(tzinfo=None)
     
     if not info.sunrise or not info.sunset:
         return {"progress": 0, "elapsed": "-", "remaining": "-", "is_day": False}
