@@ -673,11 +673,20 @@ def initialize_app():
     event_service.schedule_events(info, location_tz)
     
     app.logger.info(f"HomeSolar initialized at ({lat}, {lon}, {elev}m) - Events service running: {event_service.ha_available}")
+    app.logger.info("Event monitoring service is running in background and will fire events automatically")
 
 
-# Initialize on first request
-with app.app_context():
+# Initialize immediately at module load (not in Flask context)
+# This ensures the event service starts even if no HTTP request is made
+import atexit
+
+try:
     initialize_app()
+except Exception as e:
+    app.logger.error(f"Error during initialization: {e}")
+
+# Ensure clean shutdown
+atexit.register(lambda: event_service.stop())
 
 
 if __name__ == '__main__':

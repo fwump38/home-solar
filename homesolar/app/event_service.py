@@ -365,11 +365,17 @@ class HomeAssistantEventService:
     
     def _monitor_loop(self) -> None:
         """Background thread that monitors for events"""
-        logger.info("Event monitor started")
+        logger.info("Event monitor started (independent background process)")
         
         while self.running:
             try:
                 self.check_and_fire_events()
+                
+                # Log activity every 10 minutes to confirm the service is running
+                now = self._get_now()
+                if now.minute % 10 == 0 and now.second < 30:
+                    logger.debug(f"Event monitor active - checking events at {now.strftime('%H:%M:%S')}")
+                    
             except Exception as e:
                 logger.error(f"Error in event monitor: {e}")
             
@@ -384,9 +390,10 @@ class HomeAssistantEventService:
             return
         
         self.running = True
-        self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        # Ne pas utiliser daemon=True pour que le thread continue même sans requête Flask
+        self.thread = threading.Thread(target=self._monitor_loop, daemon=False)
         self.thread.start()
-        logger.info("HomeSolar Event Service started")
+        logger.info("HomeSolar Event Service started (background monitoring active)")
     
     def stop(self) -> None:
         """Stop the event monitoring service"""

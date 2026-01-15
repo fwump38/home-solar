@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.2] - 2026-01-15
+
+### Fixed
+
+- **Event scheduling**: Events now fire automatically in background without needing to visit the add-on page
+- Removed daemon flag from monitoring thread to ensure it continues running
+- Added Gunicorn preload and thread-safe worker configuration
+- Background service now runs independently of Flask request lifecycle
+- Added periodic logging to confirm event monitor is active
+
 ## [1.2.7.3]
 
 ### Fixed
