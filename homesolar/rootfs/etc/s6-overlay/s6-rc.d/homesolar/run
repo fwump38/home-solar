@@ -45,4 +45,17 @@ bashio::log.info "Language setting: ${language}"
 bashio::log.info "HA Language: ${ha_language}"
 
 cd /app || bashio::exit.nok "Cannot change to /app directory"
-exec gunicorn --bind 0.0.0.0:8099 --workers 1 --threads 2 app:app
+
+# Use preload to initialize event service before forking, and proper thread handling
+# --preload ensures the app is loaded before forking workers (preserves threads)
+# --worker-class=gthread ensures thread-safe handling
+# --timeout 120 to prevent premature worker restarts
+exec gunicorn --bind 0.0.0.0:8099 \
+    --workers 1 \
+    --threads 2 \
+    --worker-class=gthread \
+    --preload \
+    --timeout 120 \
+    --access-logfile - \
+    --error-logfile - \
+    app:app
