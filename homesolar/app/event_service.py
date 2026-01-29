@@ -48,6 +48,12 @@ class HomeAssistantEventService:
     EVENT_TYPE = "homesolar_phase"
     SENSOR_PREFIX = "sensor.homesolar_"
     
+    # Event type for progress events
+    PROGRESS_EVENT_TYPE = "homesolar_progress"
+    
+    # Progress thresholds that trigger events (in percent)
+    PROGRESS_THRESHOLDS = [10, 25, 50, 75, 90]
+    
     def __init__(self):
         self.supervisor_token = os.environ.get('SUPERVISOR_TOKEN')
         self.supervisor_url = "http://supervisor/core/api"
@@ -57,6 +63,12 @@ class HomeAssistantEventService:
         self.last_update_date: Optional[datetime] = None
         self._solar_info = None
         self.timezone_str: str = "UTC"  # Will be updated when schedule_events is called
+        
+        # Progress tracking
+        self._last_progress_update: Optional[datetime] = None
+        self._fired_day_thresholds: set = set()  # Track which day thresholds have been fired
+        self._fired_night_thresholds: set = set()  # Track which night thresholds have been fired
+        self._last_is_day: Optional[bool] = None  # Track day/night transitions
         
         # Check if we're running in Home Assistant
         self.ha_available = bool(self.supervisor_token)
@@ -114,6 +126,51 @@ class HomeAssistantEventService:
             logger.error(f"Error firing event: {e}")
             return False
     
+    def fire_progress_event(self, is_day: bool, progress: float, threshold: int, event_data: dict = None) -> bool:
+        """
+        Fire a progress event to Home Assistant.
+        
+        Event type: homesolar_progress
+        Event data includes:
+        - period: "day" or "night"
+        - progress: Current progress percentage
+        - threshold: The threshold that was crossed
+        - elapsed: Time elapsed
+        - remaining: Time remaining
+        """
+        if not self.ha_available:
+            period = "day" if is_day else "night"
+            logger.info(f"[SIMULATION] Would fire progress event: {period} at {threshold}% (actual: {progress:.1f}%)")
+            return False
+        
+        try:
+            period = "day" if is_day else "night"
+            data = {
+                "period": period,
+                "progress": round(progress, 1),
+                "threshold": threshold,
+                "timestamp": self._get_now().isoformat(),
+                **(event_data or {})
+            }
+            
+            response = requests.post(
+                f"{self.supervisor_url}/events/{self.PROGRESS_EVENT_TYPE}",
+                headers=self._get_headers(),
+                json=data,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Progress event fired: {period} at {threshold}% (actual: {progress:.1f}%)")
+                return True
+            else:
+                logger.error(f"Failed to fire progress event: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error firing progress event: {e}")
+            return False
+    
     def update_sensor(self, sensor_name: str, state: Any, attributes: dict = None) -> bool:
         """
         Update a sensor state in Home Assistant.
@@ -163,6 +220,9 @@ class HomeAssistantEventService:
             "nautical_dusk": "mdi:sail-boat",
             "astronomical_dusk": "mdi:weather-night",
             "elevation": "mdi:elevation-rise",
+            "day_progress": "mdi:progress-clock",
+            "night_progress": "mdi:moon-waning-crescent",
+            "is_day": "mdi:white-balance-sunny",
         }
         return icons.get(sensor_name, "mdi:sun-wireless")
     
@@ -334,6 +394,156 @@ class HomeAssistantEventService:
         
         return next_event
     
+    def _calculate_progress(self) -> Optional[dict]:
+        """
+        Calculate current day or night progress.
+        Returns dict with progress info or None if unavailable.
+        """
+        if not self._solar_info:
+            return None
+        
+        solar_info = self._solar_info
+        if not solar_info.sunrise or not solar_info.sunset:
+            return None
+        
+        now = self._get_now()
+        is_day = solar_info.sunrise <= now <= solar_info.sunset
+        
+        if is_day:
+            total = (solar_info.sunset - solar_info.sunrise).total_seconds()
+            elapsed = (now - solar_info.sunrise).total_seconds()
+            progress = (elapsed / total * 100) if total > 0 else 0
+            remaining = (solar_info.sunset - now).total_seconds()
+            
+            return {
+                "is_day": True,
+                "progress": min(100, max(0, progress)),
+                "elapsed_seconds": int(elapsed),
+                "remaining_seconds": int(remaining),
+                "total_seconds": int(total),
+                "start_time": solar_info.sunrise,
+                "end_time": solar_info.sunset,
+            }
+        else:
+            # Night - calculate from sunset to next sunrise
+            if now > solar_info.sunset:
+                # After sunset
+                next_sunrise = solar_info.sunrise + timedelta(days=1)
+                start_time = solar_info.sunset
+                end_time = next_sunrise
+                total = (next_sunrise - solar_info.sunset).total_seconds()
+                elapsed = (now - solar_info.sunset).total_seconds()
+            else:
+                # Before sunrise
+                prev_sunset = solar_info.sunset - timedelta(days=1)
+                start_time = prev_sunset
+                end_time = solar_info.sunrise
+                total = (solar_info.sunrise - prev_sunset).total_seconds()
+                elapsed = (now - prev_sunset).total_seconds()
+            
+            progress = (elapsed / total * 100) if total > 0 else 0
+            remaining = total - elapsed
+            
+            return {
+                "is_day": False,
+                "progress": min(100, max(0, progress)),
+                "elapsed_seconds": int(elapsed),
+                "remaining_seconds": int(max(0, remaining)),
+                "total_seconds": int(total),
+                "start_time": start_time,
+                "end_time": end_time,
+            }
+    
+    def _format_duration(self, seconds: int) -> str:
+        """Format duration in HH:MM:SS"""
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        secs = seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    
+    def update_progress_sensors(self) -> None:
+        """
+        Update progress sensors and fire threshold events.
+        Called periodically from the monitor loop.
+        """
+        progress_data = self._calculate_progress()
+        if not progress_data:
+            return
+        
+        is_day = progress_data["is_day"]
+        progress = progress_data["progress"]
+        elapsed = progress_data["elapsed_seconds"]
+        remaining = progress_data["remaining_seconds"]
+        
+        # Detect day/night transition
+        if self._last_is_day is not None and self._last_is_day != is_day:
+            # Reset thresholds on transition
+            if is_day:
+                self._fired_day_thresholds.clear()
+                logger.info("Day started - resetting day progress thresholds")
+            else:
+                self._fired_night_thresholds.clear()
+                logger.info("Night started - resetting night progress thresholds")
+        self._last_is_day = is_day
+        
+        # Update is_day sensor
+        self.update_sensor("is_day", "on" if is_day else "off", {
+            "device_class": "running",
+            "period": "day" if is_day else "night"
+        })
+        
+        # Update progress sensors
+        if is_day:
+            self.update_sensor("day_progress", f"{progress:.1f}", {
+                "unit_of_measurement": "%",
+                "progress_percent": round(progress, 1),
+                "elapsed": self._format_duration(elapsed),
+                "remaining": self._format_duration(remaining),
+                "elapsed_seconds": elapsed,
+                "remaining_seconds": remaining,
+                "sunrise": progress_data["start_time"].isoformat(),
+                "sunset": progress_data["end_time"].isoformat(),
+            })
+            # Set night progress to 0 during day
+            self.update_sensor("night_progress", "0.0", {
+                "unit_of_measurement": "%",
+                "progress_percent": 0,
+            })
+            
+            # Check and fire day threshold events
+            fired_thresholds = self._fired_day_thresholds
+        else:
+            self.update_sensor("night_progress", f"{progress:.1f}", {
+                "unit_of_measurement": "%",
+                "progress_percent": round(progress, 1),
+                "elapsed": self._format_duration(elapsed),
+                "remaining": self._format_duration(remaining),
+                "elapsed_seconds": elapsed,
+                "remaining_seconds": remaining,
+                "sunset": progress_data["start_time"].isoformat(),
+                "sunrise": progress_data["end_time"].isoformat(),
+            })
+            # Set day progress to 0 during night
+            self.update_sensor("day_progress", "0.0", {
+                "unit_of_measurement": "%",
+                "progress_percent": 0,
+            })
+            
+            # Check and fire night threshold events
+            fired_thresholds = self._fired_night_thresholds
+        
+        # Fire threshold events
+        for threshold in self.PROGRESS_THRESHOLDS:
+            if progress >= threshold and threshold not in fired_thresholds:
+                event_data = {
+                    "elapsed": self._format_duration(elapsed),
+                    "remaining": self._format_duration(remaining),
+                    "elapsed_seconds": elapsed,
+                    "remaining_seconds": remaining,
+                }
+                self.fire_progress_event(is_day, progress, threshold, event_data)
+                fired_thresholds.add(threshold)
+    
     def check_and_fire_events(self) -> None:
         """Check if any scheduled events should be fired"""
         now = self._get_now()
@@ -369,12 +579,19 @@ class HomeAssistantEventService:
         
         while self.running:
             try:
+                # Check and fire phase events
                 self.check_and_fire_events()
+                
+                # Update progress sensors and fire progress events
+                self.update_progress_sensors()
                 
                 # Log activity every 10 minutes to confirm the service is running
                 now = self._get_now()
                 if now.minute % 10 == 0 and now.second < 30:
-                    logger.debug(f"Event monitor active - checking events at {now.strftime('%H:%M:%S')}")
+                    progress_data = self._calculate_progress()
+                    if progress_data:
+                        period = "Day" if progress_data["is_day"] else "Night"
+                        logger.debug(f"Event monitor active - {period} progress: {progress_data['progress']:.1f}%")
                     
             except Exception as e:
                 logger.error(f"Error in event monitor: {e}")

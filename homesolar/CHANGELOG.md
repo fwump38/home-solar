@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.4.0] - 2026-01-29
+
+### Added
+
+- **Progress events**: New `homesolar_progress` events fired at 10%, 25%, 50%, 75%, 90% thresholds
+  - Use in automations to trigger actions based on day/night progress
+  - Event data includes: `period` (day/night), `progress`, `threshold`, `elapsed`, `remaining`
+- **Progress sensors**: New sensors for automation triggers
+  - `sensor.homesolar_day_progress`: Day progress percentage (0-100%)
+  - `sensor.homesolar_night_progress`: Night progress percentage (0-100%)
+  - `sensor.homesolar_is_day`: Binary indicator (on/off)
+  - Sensors include elapsed/remaining time in attributes
+
+### Example Automation
+```yaml
+automation:
+  - alias: "Half day passed"
+    trigger:
+      - platform: event
+        event_type: homesolar_progress
+        event_data:
+          period: day
+          threshold: 50
+    action:
+      - service: notify.mobile
+        data:
+          message: "Half of the day has passed!"
+```
+
 ## [1.3.2] - 2026-01-15
 
 ### Fixed
