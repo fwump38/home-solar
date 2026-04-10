@@ -170,13 +170,13 @@ def get_timezone_for_coordinates(latitude: float, longitude: float) -> str:
         
         country_code = data.get('address', {}).get('country_code', '').upper()
         
-        if country_code and country_code in COUNTRY_TIMEZONES:
+        if country_code and country_code in COUNTRY_TIMEZONES and country_code not in ['US', 'CA', 'MX', 'BR', 'AU']:
             timezone_str = COUNTRY_TIMEZONES[country_code]
             _timezone_cache[cache_key] = timezone_str
             app.logger.info(f"Timezone for ({latitude}, {longitude}) via country {country_code}: {timezone_str}")
             return timezone_str
         elif country_code:
-            app.logger.warning(f"Country {country_code} not in timezone mapping, using fallback")
+            app.logger.warning(f"Country {country_code} not in timezone mapping or using fallback for multi-timezone country, using longitude fallback")
     except Exception as e:
         app.logger.warning(f"Nominatim reverse geocoding failed: {e}")
     

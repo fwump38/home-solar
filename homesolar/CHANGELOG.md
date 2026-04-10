@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.2] - 2026-04-09
+
+### Fixed
+
+- **Timezone detection for large countries**: Improved timezone detection for countries with multiple timezones (US, CA, MX, BR, AU)
+  - Now uses longitude-based estimation instead of defaulting to major city timezone
+  - Fixes incorrect solar times for locations in different timezones within the same country
+  - Users may need to re-save their location in the app to update the timezone
+
 ## [1.4.1] - 2026-04-09
 
 ### Fixed
