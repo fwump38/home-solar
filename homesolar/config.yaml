@@ -1,9 +1,9 @@
 # Home Assistant Add-on: HomeSolar - Solar Ephemeris
 name: "HomeSolar - Solar Ephemeris"
-version: "1.4.0"
+version: "1.4.1"
 slug: "homesolar"
 description: "Complete solar ephemeris based on NOAA algorithm. Shows sunrise/sunset, civil/nautical/astronomical twilights, day length and progression."
-url: "https://github.com/pehadavid/home-solar"
+url: "https://github.com/fwump38/home-solar"
 arch:
   - amd64
   - aarch64

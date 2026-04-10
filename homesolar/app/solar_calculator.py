@@ -306,10 +306,14 @@ class CompleteSolarModel:
             current_date = current_date.replace(tzinfo=None)
         
         current_date = current_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        current_date_utc = current_date - timedelta(hours=self.timezone_offset)
         
         self.current_solar_info = SolarCalculator.get_complete_solar_info(
-            current_date, latitude, longitude, elevation
+            current_date_utc, latitude, longitude, elevation
         )
+        
+        # Set the date to the local date for display purposes
+        self.current_solar_info.date = current_date
         
         # Appliquer le décalage horaire
         self._apply_timezone_offset(self.current_solar_info)
@@ -321,9 +325,12 @@ class CompleteSolarModel:
         
         while iteration_date.date() != next_year.date():
             iteration_date += timedelta(days=1)
+            iteration_date_utc = iteration_date - timedelta(hours=self.timezone_offset)
             day_info = SolarCalculator.get_complete_solar_info(
-                iteration_date, latitude, longitude, elevation
+                iteration_date_utc, latitude, longitude, elevation
             )
+            # Set the date to the local date
+            day_info.date = iteration_date
             self._apply_timezone_offset(day_info)
             self.relative_map[iteration_date.date()] = day_info
     

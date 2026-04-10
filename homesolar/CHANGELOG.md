@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.1] - 2026-04-09
+
+### Fixed
+
+- **Timezone calculation bug**: Fixed incorrect solar times when timezone offset causes date misalignment between local and UTC time
+  - Solar calculations now properly account for timezone differences to show accurate sunrise/sunset times
+  - Current time display now matches solar event times
+
 ## [1.4.0] - 2026-01-29
 
 ### Added
