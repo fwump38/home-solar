@@ -29,7 +29,7 @@ Complete solar ephemeris Home Assistant add-on based on NOAA (National Oceanic a
 1. Open Home Assistant
 2. Go to **Settings** → **Add-ons** → **Add-on Store**
 3. Click the three dots menu (top right) → **Repositories**
-4. Add this repository: `https://github.com/pehadavid/home-solar`
+4. Add this repository: `https://github.com/fwump38/home-solar`
 5. Search for "HomeSolar" and install
 
 ### Manual Installation

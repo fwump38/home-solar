@@ -16,7 +16,7 @@ Home Assistant add-on repository for solar ephemeris tools.
 3. Click the three dots menu (⋮) in the top right → **Repositories**
 4. Add this repository URL:
    ```
-   https://github.com/pehadavid/home-solar
+   https://github.com/fwump38/home-solar
    ```
 5. Close the dialog and refresh the page
 6. Find **HomeSolar - Solar Ephemeris** in the add-on list
@@ -45,7 +45,7 @@ Complete solar ephemeris based on NOAA algorithm. Shows sunrise/sunset, civil/na
 
 ## Support
 
-If you encounter any issues, please [open an issue](https://github.com/pehadavid/home-solar/issues) on GitHub.
+If you encounter any issues, please [open an issue](https://github.com/fwump38/home-solar/issues) on GitHub.
 
 ## License
 
